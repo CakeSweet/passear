@@ -33,6 +33,10 @@ export class Network {
     this.dialing = new Set();
 
     this.localPos = [0, 0, 0];
+    /** Banco que o jogador local ocupa (-1 = a pé). */
+    this.localSeat = -1;
+    /** Quem cria a sala fornece o estado do mundo para quem chega (ex.: o carro). */
+    this.worldProvider = null;
     this.handlers = new Map();
     this.timers = [];
     this.closed = false;
@@ -235,6 +239,7 @@ export class Network {
         name: this.profile.name,
         color: this.profile.color,
         pos: this.localPos,
+        seat: this.localSeat,
       });
     };
 
@@ -297,6 +302,7 @@ export class Network {
           entry.name = message.name || entry.name;
           entry.color = message.color || entry.color;
           entry.pos = message.pos || entry.pos;
+          entry.seat = Number.isFinite(message.seat) ? message.seat : -1;
         }
 
         const profile = {
@@ -304,6 +310,7 @@ export class Network {
           name: message.name || entry?.name || 'Jogador',
           color: message.color || entry?.color || '#9aa7b4',
           pos: message.pos ?? entry?.pos ?? null,
+          seat: Number.isFinite(message.seat) ? message.seat : -1,
         };
         this.known.set(remoteId, profile);
 
@@ -313,9 +320,19 @@ export class Network {
           const others = [];
           for (const other of this.peers.values()) {
             if (other.id === remoteId) continue;
-            others.push({ id: other.id, name: other.name, color: other.color, pos: other.pos ?? null });
+            others.push({
+              id: other.id,
+              name: other.name,
+              color: other.color,
+              pos: other.pos ?? null,
+              seat: other.seat ?? -1,
+            });
           }
-          this._send(entry.conn, { t: 'welcome', peers: others });
+          this._send(entry.conn, {
+            t: 'welcome',
+            peers: others,
+            world: this.worldProvider ? this.worldProvider() : null,
+          });
 
           for (const other of this.peers.values()) {
             if (other.id === remoteId) continue;
@@ -326,6 +343,7 @@ export class Network {
       }
 
       case 'welcome': {
+        if (message.world) this.emit('world', message.world);
         for (const peer of message.peers || []) {
           if (!peer?.id) continue;
           this.known.set(peer.id, peer);
@@ -348,6 +366,14 @@ export class Network {
 
       case 'st':
         this.emit('peer-state', remoteId, message);
+        break;
+
+      case 'car':
+        this.emit('peer-car', remoteId, message);
+        break;
+
+      case 'rag':
+        this.emit('peer-ragdoll', remoteId, message.p ?? null);
         break;
 
       case 'chat': {
@@ -388,7 +414,22 @@ export class Network {
   /** Envia posição/rotação/velocidade para todos (chamado pelo loop). */
   broadcastState(state) {
     this.localPos = state.p;
-    const message = { t: 'st', p: state.p, r: state.r, s: state.s, a: state.a };
+    this.localSeat = Number.isFinite(state.k) ? state.k : -1;
+    const message = { t: 'st', p: state.p, r: state.r, s: state.s, a: state.a, k: this.localSeat };
+    for (const peer of this.peers.values()) this._send(peer.conn, message);
+  }
+
+  /** Só o motorista manda a pose do carro. */
+  broadcastCar(pose) {
+    const message = { t: 'car', x: pose.x, z: pose.z, yaw: pose.yaw, v: pose.v, st: pose.st };
+    for (const peer of this.peers.values()) this._send(peer.conn, message);
+  }
+
+  /**
+   * Posições do ragdoll (dono simula). `null` avisa que o boneco levantou.
+   */
+  broadcastRagdoll(points) {
+    const message = { t: 'rag', p: points ?? null };
     for (const peer of this.peers.values()) this._send(peer.conn, message);
   }
 

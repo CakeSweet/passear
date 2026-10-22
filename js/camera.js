@@ -89,9 +89,9 @@ export class CameraRig {
     this.ready = false;
   }
 
-  update(dt, target) {
+  update(dt, target, focusHeight = 1.35) {
     const focusX = target.x;
-    const focusY = target.y + 1.35;
+    const focusY = target.y + focusHeight;
     const focusZ = target.z;
 
     const horizontal = Math.cos(this.pitch) * this.dist;

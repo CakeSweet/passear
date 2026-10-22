@@ -11,6 +11,7 @@ const FONT_STACK = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
 export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
   const seed = hashCode(name);
   const accent = new THREE.Color(color);
+  const skinHex = SKIN_TONES[seed % SKIN_TONES.length];
 
   const shirtMat = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.78, metalness: 0.02 });
   const pantsMat = new THREE.MeshStandardMaterial({
@@ -19,7 +20,7 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     metalness: 0,
   });
   const skinMat = new THREE.MeshStandardMaterial({
-    color: SKIN_TONES[seed % SKIN_TONES.length],
+    color: skinHex,
     roughness: 0.62,
     metalness: 0,
   });
@@ -208,7 +209,7 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     legL: 0, legR: 0, armL: 0, armR: 0, armLZ: 0.08, armRZ: -0.08, lean: 0, headTilt: 0,
   };
 
-  function animate(dt, speed = 0, airborne = false) {
+  function animate(dt, speed = 0, airborne = false, sitting = false) {
     const moving = speed > 0.25;
     const runBlend = clamp(speed / 7.6, 0, 1);
 
@@ -222,7 +223,17 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     let headTilt = 0;
     let targetBob = 0;
 
-    if (airborne) {
+    if (sitting) {
+      // sentado: pernas à frente e mãos no colo
+      legL = -1.22;
+      legR = -1.22;
+      armL = -0.52;
+      armR = -0.52;
+      armLZ = 0.14;
+      armRZ = -0.14;
+      lean = -0.06;
+      headTilt = 0.03;
+    } else if (airborne) {
       legL = -0.42;
       legR = 0.28;
       armL = -1.25;
@@ -320,5 +331,7 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     dispose,
     /** altura aproximada, útil para câmera/etiqueta */
     height: 1.9,
+    /** tom de pele sorteado, usado para montar o ragdoll da mesma pessoa */
+    skinColor: skinHex,
   };
 }

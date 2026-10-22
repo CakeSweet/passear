@@ -60,7 +60,8 @@
       </form>
     </section>
 
-    <div class="hint" id="hint">WASD mover · arraste para olhar · espaço pular · shift correr</div>
+    <div class="hint" id="hint">WASD mover · arraste para olhar · espaço pular · E carro · R cair</div>
+    <div id="prompt" class="prompt is-hidden" role="status"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
 
@@ -94,6 +95,8 @@
           <li><b>Criar sala</b> gera um código de 5 caracteres. Quem tiver o código cai no mesmo mundo.</li>
           <li>A conexão é <b>P2P</b> (WebRTC via PeerJS): posições e mensagens viajam direto entre os navegadores.</li>
           <li>Quem cria a sala só apresenta as pessoas umas às outras. Depois todos falam entre si, sem passar por servidor.</li>
+          <li>Perto do carro, aperte <b>E</b> para entrar (o banco do motorista é seu se estiver livre). Dentro dele, <b>W/S</b> acelera e freia e <b>A/D</b> vira. <b>E</b> de novo para descer.</li>
+          <li><b>R</b> joga o boneco no chão com física de ragdoll. Ser atropelado por um carro rápido também derruba — e ele levanta sozinho em alguns segundos.</li>
           <li>Ideal até ~8 pessoas por sala. O servidor PeerJS é usado apenas para o encontro inicial.</li>
         </ul>
       </details>
@@ -104,6 +107,7 @@
     <div id="stick" class="stick">
       <div id="stickKnob" class="stick-knob"></div>
     </div>
+    <button id="actionBtn" class="action is-hidden" type="button" aria-label="Entrar ou sair do carro"></button>
     <button id="jumpBtn" class="jump" type="button" aria-label="Pular">↑</button>
   </div>
 

@@ -21,12 +21,16 @@ export class UI {
     this.chatInput = document.getElementById('chatInput');
     this.toasts = document.getElementById('toasts');
     this.hint = document.getElementById('hint');
+    this.prompt = document.getElementById('prompt');
+    this.actionBtn = document.getElementById('actionBtn');
     this.touchEl = document.getElementById('touch');
 
     this.roomCode = '';
     this.busy = false;
     this.joined = false;
-    this.callbacks = { create: null, join: null, chat: null };
+    this.callbacks = { create: null, join: null, chat: null, action: null };
+    this._promptText = null;
+    this._actionLabel = null;
 
     this._bind();
     this._restore();
@@ -37,6 +41,7 @@ export class UI {
   onCreate(fn) { this.callbacks.create = fn; return this; }
   onJoin(fn) { this.callbacks.join = fn; return this; }
   onChat(fn) { this.callbacks.chat = fn; return this; }
+  onAction(fn) { this.callbacks.action = fn; return this; }
 
   // ----------------------------------------------------------------- setup
 
@@ -57,6 +62,11 @@ export class UI {
     });
 
     this.copyBtn.addEventListener('click', () => this._copyInvite());
+
+    this.actionBtn?.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      this.callbacks.action?.();
+    });
 
     this.chatForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -173,7 +183,7 @@ export class UI {
 
   showTouch() {
     this.touchEl.classList.remove('is-hidden');
-    if (this.hint) this.hint.textContent = 'arraste para olhar · use o direcional para andar';
+    if (this.hint) this.hint.textContent = 'arraste para olhar · direcional para andar';
   }
 
   setRoom(code) {
@@ -199,6 +209,22 @@ export class UI {
 
   setPing(ms) {
     this.pingValue.textContent = typeof ms === 'number' && Number.isFinite(ms) ? Math.round(ms) : '—';
+  }
+
+  /** Dica contextual no rodapé (desktop). Texto vazio esconde. */
+  setPrompt(text = '') {
+    if (text === this._promptText) return;
+    this._promptText = text;
+    this.prompt.textContent = text;
+    this.prompt.classList.toggle('is-hidden', !text);
+  }
+
+  /** Rótulo do botão de ação no toque. */
+  setActionLabel(label = '') {
+    if (label === this._actionLabel) return;
+    this._actionLabel = label;
+    this.actionBtn.textContent = label;
+    this.actionBtn.classList.toggle('is-hidden', !label);
   }
 
   setParticipants(people) {

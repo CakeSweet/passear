@@ -6,6 +6,8 @@ const ZERO = { forward: 0, right: 0, run: false, jump: false };
 export class Input {
   constructor() {
     this.keys = new Set();
+    /** teclas apertadas desde a última leitura (ações de borda: entrar/sair, cair) */
+    this.pressed = new Set();
     this.axisX = 0;
     this.axisY = 0;
     this.jumpHeld = false;
@@ -29,6 +31,7 @@ export class Input {
       'KeyW', 'KeyA', 'KeyS', 'KeyD',
       'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
       'Space', 'ShiftLeft', 'ShiftRight',
+      'KeyE', 'KeyR',
     ]);
 
     window.addEventListener('keydown', (event) => {
@@ -36,19 +39,29 @@ export class Input {
       if (!handled.has(event.code)) return;
       if (event.code === 'Space') event.preventDefault();
       this.keys.add(event.code);
+      if (!event.repeat) this.pressed.add(event.code);
     });
 
     window.addEventListener('keyup', (event) => {
       this.keys.delete(event.code);
     });
 
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.pressed.clear();
+    });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.keys.clear();
+      if (document.hidden) {
+        this.keys.clear();
+        this.pressed.clear();
+      }
     });
     document.addEventListener('focusin', (event) => {
       const tag = event.target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') this.keys.clear();
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        this.keys.clear();
+        this.pressed.clear();
+      }
     });
   }
 
@@ -132,9 +145,17 @@ export class Input {
     this.enabled = value;
     if (!value) {
       this.keys.clear();
+      this.pressed.clear();
       this.jumpHeld = false;
       this.resetJoystick?.();
     }
+  }
+
+  /** Ação de borda: devolve true uma única vez por aperto. */
+  wasPressed(code) {
+    if (!this.pressed.has(code)) return false;
+    this.pressed.delete(code);
+    return true;
   }
 
   get state() {

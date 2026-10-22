@@ -49,4 +49,31 @@ export const CONFIG = {
     gravity: 19,
     turn: 14,
   },
+
+  car: {
+    /** Onde o carro nasce (todo mundo começa com a mesma pose). */
+    spawn: { x: 5.5, z: 8.5, yaw: Math.PI * 0.92 },
+    /** Velocidade máxima para a frente e para a ré (m/s). */
+    maxSpeed: 15,
+    maxReverse: 5,
+    /** Aceleração, frenagem e ré (m/s²). */
+    accel: 9,
+    brake: 24,
+    reverseAccel: 6,
+    /** Perda de velocidade sem acelerar (1/s). */
+    drag: 0.7,
+    /** Velocidade angular máxima (rad/s). */
+    turnRate: 1.9,
+    /** Distância para entrar no carro. */
+    enterRadius: 3.6,
+  },
+
+  ragdoll: {
+    /** Frequência de envio das posições do ragdoll (Hz). */
+    syncHz: 12,
+    /** Tempo máximo caído antes de levantar sozinho (ms). */
+    maxMs: 6000,
+    /** Tempo mínimo caído, mesmo que já esteja parado (ms). */
+    minMs: 2200,
+  },
 };

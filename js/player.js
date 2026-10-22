@@ -96,7 +96,7 @@ export class LocalPlayer {
     this.avatar.root.rotation.y = this.yaw;
   }
 
-  snapshot() {
+  snapshot(seat = -1) {
     return {
       p: [
         Math.round(this.pos.x * 100) / 100,
@@ -106,6 +106,7 @@ export class LocalPlayer {
       r: Math.round(this.yaw * 1000) / 1000,
       s: Math.round(this.speed * 100) / 100,
       a: this.onGround ? 0 : 1,
+      k: Number.isFinite(seat) ? seat : -1,
     };
   }
 }

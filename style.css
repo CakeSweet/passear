@@ -253,12 +253,38 @@ html, body {
   transition: opacity 0.4s;
 }
 
+/* dica contextual (entrar no carro, sair, levantar) */
+.prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(9, 14, 20, 0.78);
+  border: 1px solid rgba(255, 143, 107, 0.45);
+  color: #ffe7dd;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 25;
+  animation: prompt-in 0.18s ease-out;
+}
+
+@keyframes prompt-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* ---------- toasts ---------- */
 
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: 76px;
+  bottom: 118px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -522,6 +548,26 @@ html, body {
 
 .jump:active { background: rgba(255, 143, 107, 0.45); }
 
+.action {
+  position: absolute;
+  right: max(116px, calc(env(safe-area-inset-right) + 116px));
+  bottom: max(46px, calc(env(safe-area-inset-bottom) + 46px));
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 143, 107, 0.55);
+  background: rgba(255, 143, 107, 0.22);
+  color: #ffe7dd;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.action:active { background: rgba(255, 143, 107, 0.5); }
+
 .noscript {
   position: fixed;
   inset: 0;
@@ -578,4 +624,8 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+@media (pointer: coarse) {
+  .prompt { display: none; }
 }

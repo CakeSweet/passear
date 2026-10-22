@@ -4,6 +4,8 @@ Um mundo 3D plano e multiplayer, direto entre navegadores. Você cria uma sala,
 manda o código (ou o link) para alguém e os dois aparecem no mesmo gramado como
 bonecos 3D que andam, pulam e conversam por chat.
 
+**Jogue agora:** <https://cakesweet.github.io/passear/>
+
 - **Three.js** desenha o mundo e os bonecos.
 - **PeerJS / WebRTC** conecta os navegadores em malha (P2P). Não existe servidor
   de jogo: cada participante manda a própria posição para os outros.
@@ -161,9 +163,25 @@ __passear.rig            // yaw, pitch, distância da câmera
 
 ## Publicar
 
-Qualquer hospedagem estática com HTTPS serve (Netlify, Vercel, Cloudflare Pages,
-GitHub Pages). Basta subir `index.html`, `style.css` e a pasta `js/`. O
-`server.mjs` é só para desenvolvimento local.
+Versão no ar: **<https://cakesweet.github.io/passear/>** (branch `main`, raiz do
+repositório, sem build).
+
+Qualquer hospedagem estática com HTTPS também serve (Netlify, Vercel, Cloudflare
+Pages). Basta subir `index.html`, `style.css` e a pasta `js/`. O `server.mjs` é
+só para desenvolvimento local.
+
+Para publicar no GitHub Pages a partir do zero:
+
+```bash
+git init -b main
+git add -A
+git commit -m "mundo 3D P2P"
+gh repo create passear --public --source=. --push
+gh api -X POST repos/{owner}/passear/pages \
+  -f 'source[branch]=main' -f 'source[path]=/'
+```
+
+O `.nojekyll` já está no repositório para o Pages servir os arquivos como estão.
 
 ## Limites conhecidos
 

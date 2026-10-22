@@ -64,6 +64,11 @@ let ragdollReadyAt = 0;
 let ragdollSendTimer = 0;
 let carSendTimer = 0;
 
+const PLAYER_RADIUS = 0.62;
+const PUNCH_RANGE = 1.85;
+const PUNCH_COOLDOWN_MS = 900;
+let punchReadyAt = 0;
+
 const carFocus = new THREE.Vector3();
 const scratch = new THREE.Vector3();
 const hitImpulse = new THREE.Vector3();
@@ -152,6 +157,25 @@ function wireNetwork(network) {
 
   network.on('chat', (message) => {
     ui.chat({ name: message.name, text: message.text, color: message.color });
+  });
+
+  network.on('peer-hit', (id, message) => {
+    const attacker = remotes.get(id);
+    attacker?.avatar.punch();
+
+    if (!me || message.to !== network.id || myRagdoll || mySeat >= 0) return;
+
+    const now = performance.now();
+    if (now < hitCooldownUntil) return;
+
+    // valida do lado de quem levou: o soco precisa ter saído de perto
+    const distance = Math.hypot(me.player.pos.x - message.px, me.player.pos.z - message.pz);
+    if (distance > 2.8) return;
+
+    const dx = Number(message.dx) || 0;
+    const dz = Number(message.dz) || 0;
+    const name = attacker?.name || 'Alguém';
+    startRagdoll(new THREE.Vector3(dx * 3.4, 3.1, dz * 3.4), now, `${name} te acertou! Aperte R para levantar.`);
   });
 
   network.on('latency', () => ui.setPing(network.averageRtt));
@@ -346,7 +370,7 @@ function exitCar() {
 
 // ------------------------------------------------------------- ragdoll
 
-function startRagdoll(velocity, now = performance.now()) {
+function startRagdoll(velocity, now = performance.now(), notice = 'Você caiu! Aperte R para levantar.') {
   if (!me || myRagdoll || mySeat >= 0) return;
 
   const ragdoll = new Ragdoll({
@@ -370,7 +394,7 @@ function startRagdoll(velocity, now = performance.now()) {
   hitCooldownUntil = now + 800;
 
   net?.broadcastRagdoll(ragdoll.serialize());
-  ui.toast('Você caiu! Aperte R para levantar.', 'leave');
+  ui.toast(notice, 'leave');
 }
 
 function endRagdoll(now = performance.now()) {
@@ -410,6 +434,100 @@ function handleAction() {
 
 ui.onAction(() => handleAction());
 
+// ------------------------------------------------------------------ socos
+
+/** Soco: atinge o primeiro boneco em pé à frente e derruba via rede. */
+function tryPunch(now = performance.now()) {
+  if (!me || myRagdoll || mySeat >= 0) return;
+  if (now < punchReadyAt) return;
+  punchReadyAt = now + PUNCH_COOLDOWN_MS;
+
+  me.avatar.punch();
+
+  const fx = Math.sin(me.player.yaw);
+  const fz = Math.cos(me.player.yaw);
+  let target = null;
+  let bestDot = 0.35;
+
+  for (const remote of remotes.values()) {
+    if (remote.ragdoll || remote.seat >= 0) continue;
+
+    const dx = remote.pos.x - me.player.pos.x;
+    const dz = remote.pos.z - me.player.pos.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001 || distance > PUNCH_RANGE) continue;
+
+    const dot = (dx * fx + dz * fz) / distance;
+    if (dot > bestDot) {
+      bestDot = dot;
+      target = remote;
+    }
+  }
+
+  let dx = fx;
+  let dz = fz;
+  if (target) {
+    dx = target.pos.x - me.player.pos.x;
+    dz = target.pos.z - me.player.pos.z;
+    const length = Math.hypot(dx, dz) || 1;
+    dx /= length;
+    dz /= length;
+  }
+
+  // o alvo valida a distância e cai sozinho; os outros só veem o golpe
+  net?.broadcastHit({
+    to: target ? target.id : null,
+    px: me.player.pos.x,
+    pz: me.player.pos.z,
+    dx,
+    dz,
+  });
+}
+
+ui.onPunch(() => tryPunch());
+
+// --------------------------------------------------- colisão entre bonecos
+
+/** Empurra o jogador local para fora de quem está em pé por perto. */
+function resolvePlayerCollisions() {
+  if (!me || mySeat >= 0 || myRagdoll) return;
+
+  const pos = me.player.pos;
+  let moved = false;
+
+  for (const remote of remotes.values()) {
+    if (remote.ragdoll || remote.seat >= 0) continue;
+
+    const dx = pos.x - remote.pos.x;
+    const dz = pos.z - remote.pos.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance >= PLAYER_RADIUS) continue;
+
+    const nx = distance > 0.0001 ? dx / distance : me.id < remote.id ? 1 : -1;
+    const nz = distance > 0.0001 ? dz / distance : 0;
+    const push = (PLAYER_RADIUS - distance) * 0.5 + 0.002;
+
+    pos.x += nx * push;
+    pos.z += nz * push;
+
+    // tira a velocidade que empurrava para dentro do outro
+    const into = me.player.velocity.x * nx + me.player.velocity.y * nz;
+    if (into < 0) {
+      me.player.velocity.x -= into * nx;
+      me.player.velocity.y -= into * nz;
+    }
+
+    moved = true;
+  }
+
+  if (moved) {
+    const limit = CONFIG.world.bounds - 1;
+    pos.x = clamp(pos.x, -limit, limit);
+    pos.z = clamp(pos.z, -limit, limit);
+    me.avatar.root.position.copy(pos);
+  }
+}
+
 // --------------------------------------------------------------- entrar
 
 function cleanupNetwork() {
@@ -432,7 +550,7 @@ async function enterRoom({ name, code, host }) {
   ui.setStatus(host ? 'Abrindo a sala…' : 'Procurando a sala…');
   cleanupNetwork();
 
-  const color = colorForName(name);
+  const color = ui.getColor();
   net = new Network({ name, color });
   wireNetwork(net);
 
@@ -548,6 +666,14 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// O menu nativo do navegador não abre no jogo (clique direito / toque longo),
+// exceto em campos de texto, onde colar ainda é útil.
+window.addEventListener('contextmenu', (event) => {
+  const target = event.target;
+  if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]')) return;
+  event.preventDefault();
+});
+
 function updateLocal(dt, now) {
   if (!me) return;
 
@@ -589,6 +715,7 @@ function updateLocal(dt, now) {
 
   // ---- a pé ----
   me.player.update(dt, input.state, rig.yaw);
+  resolvePlayerCollisions();
   rig.update(dt, me.player.pos);
 
   // atropelamento: cada cliente detecta o próprio
@@ -622,6 +749,8 @@ function updateRemotes(dt) {
 }
 
 function updatePrompt() {
+  ui.setPunchVisible(!!me && !myRagdoll && mySeat < 0);
+
   if (!me) {
     ui.setPrompt('');
     ui.setActionLabel('');
@@ -664,6 +793,9 @@ function frame() {
   if (me) {
     // E: entrar/sair do carro ou levantar
     if (input.wasPressed('KeyE')) handleAction();
+
+    // F: soco em quem estiver na frente
+    if (!myRagdoll && mySeat < 0 && input.wasPressed('KeyF')) tryPunch(now);
 
     // R: deitar no chão (ou levantar, se já estiver caído)
     if (!myRagdoll && input.wasPressed('KeyR')) {
@@ -728,6 +860,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     endRagdoll,
     enterCar,
     exitCar,
+    punch: tryPunch,
     rig,
     input,
   };

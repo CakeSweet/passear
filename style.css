@@ -172,11 +172,55 @@ html, body {
 .chat {
   grid-column: 2;
   grid-row: 3;
+  justify-self: end;
   width: 300px;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  transition: width 0.25s, padding 0.25s, background 0.25s, border-color 0.25s,
+    box-shadow 0.25s, opacity 0.25s;
+}
+
+/* recolhido: sobra só o botão redondo do chat */
+.chat.is-idle {
+  width: auto;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.chat.is-idle .chat-log { display: none; }
+.chat.is-idle .chat-form input { display: none; }
+.chat.is-idle .chat-form { gap: 0; }
+
+.chat.is-idle .send {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--panel);
+  border-color: var(--line);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  font-size: 18px;
+}
+
+.chat.is-idle .send:hover { background: rgba(255, 255, 255, 0.12); }
+
+.chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 10px rgba(255, 143, 107, 0.7);
+  pointer-events: none;
 }
 
 .chat-log {
@@ -198,6 +242,7 @@ html, body {
 .chat-log .msg.system { color: var(--muted); font-style: italic; }
 
 .chat-form {
+  position: relative;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -410,6 +455,37 @@ html, body {
 
 .field input::placeholder { color: rgba(146, 166, 184, 0.6); }
 
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 2px 0;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.swatch:hover { transform: scale(1.12); }
+
+.swatch[aria-checked="true"] {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -568,6 +644,25 @@ html, body {
 
 .action:active { background: rgba(255, 143, 107, 0.5); }
 
+.punch {
+  position: absolute;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(128px, calc(env(safe-area-inset-bottom) + 128px));
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(9, 14, 20, 0.42);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.punch:active { background: rgba(255, 143, 107, 0.45); }
+
 .noscript {
   position: fixed;
   inset: 0;
@@ -591,28 +686,22 @@ html, body {
     grid-column: 1 / -1;
     justify-self: center;
     width: min(92vw, 360px);
-    margin-bottom: 150px;
+    margin-bottom: 236px;
   }
-  .chat-log { max-height: 72px; }
+  .chat-log { max-height: 60px; }
   .hint { display: none; }
   .room { padding: 8px 10px 8px 12px; gap: 10px; }
   #roomCode { font-size: 16px; }
   .stats { padding: 10px 12px; font-size: 12px; }
   .card { padding: 22px; gap: 14px; }
   .card h1 { font-size: 34px; }
-  .toasts { bottom: 320px; }
+  .toasts { bottom: 372px; }
 }
 
-@media (max-height: 560px) and (pointer: coarse) {
-  .chat {
-    grid-column: 1 / -1;
-    justify-self: center;
-    width: min(70vw, 320px);
-    margin-bottom: 104px;
-  }
-  .chat-log { max-height: 40px; }
-  .toasts { bottom: 268px; }
-  .hint { display: none; }
+/* tablet/telefone grande na horizontal: sobe o chat acima dos controles */
+@media (pointer: coarse) and (min-width: 721px) and (min-height: 561px) {
+  .chat { margin-bottom: 230px; }
+  .toasts { bottom: 340px; }
 }
 
 @media (max-height: 560px) {
@@ -620,6 +709,19 @@ html, body {
   .card h1 { font-size: 30px; }
   .card .lead { display: none; }
   .chat-log { max-height: 70px; }
+}
+
+/* telefone na horizontal: chat compacto e acima dos controles de toque */
+@media (max-height: 560px) and (pointer: coarse) {
+  .chat {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(66vw, 320px);
+    margin-bottom: 96px;
+  }
+  .chat-log { max-height: 36px; }
+  .toasts { bottom: 252px; }
+  .hint { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

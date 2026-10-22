@@ -31,7 +31,7 @@ export class Input {
       'KeyW', 'KeyA', 'KeyS', 'KeyD',
       'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
       'Space', 'ShiftLeft', 'ShiftRight',
-      'KeyE', 'KeyR',
+      'KeyE', 'KeyR', 'KeyF',
     ]);
 
     window.addEventListener('keydown', (event) => {

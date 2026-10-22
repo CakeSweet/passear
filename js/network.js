@@ -376,6 +376,10 @@ export class Network {
         this.emit('peer-ragdoll', remoteId, message.p ?? null);
         break;
 
+      case 'hit':
+        this.emit('peer-hit', remoteId, message);
+        break;
+
       case 'chat': {
         const text = String(message.text ?? '').slice(0, 140).trim();
         if (!text) return;
@@ -430,6 +434,22 @@ export class Network {
    */
   broadcastRagdoll(points) {
     const message = { t: 'rag', p: points ?? null };
+    for (const peer of this.peers.values()) this._send(peer.conn, message);
+  }
+
+  /**
+   * Avisa todo mundo de um soco. Só o alvo (`to`) se deixa derrubar; os
+   * demais usam a mensagem para tocar a animação de quem bateu.
+   */
+  broadcastHit(payload = {}) {
+    const message = {
+      t: 'hit',
+      to: typeof payload.to === 'string' ? payload.to : null,
+      px: Number(payload.px) || 0,
+      pz: Number(payload.pz) || 0,
+      dx: Number(payload.dx) || 0,
+      dz: Number(payload.dz) || 0,
+    };
     for (const peer of this.peers.values()) this._send(peer.conn, message);
   }
 

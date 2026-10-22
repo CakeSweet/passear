@@ -2,8 +2,8 @@
 
 Um mundo 3D plano e multiplayer, direto entre navegadores. Você cria uma sala,
 manda o código (ou o link) para alguém e os dois aparecem no mesmo gramado como
-bonecos 3D que andam, pulam, conversam por chat, andam de carro e caem no chão
-com física de ragdoll.
+bonecos 3D que andam, pulam, conversam por chat, andam de carro, se esbarram,
+socam uns aos outros e caem no chão com física de ragdoll.
 
 **Jogue agora:** <https://cakesweet.github.io/passear/>
 
@@ -44,13 +44,24 @@ endereço `http://SEU-IP:5173` que o terminal mostra ao iniciar.
 | Pular | `Espaço` |
 | Entrar / sair do carro | `E` (perto do carro) |
 | Dirigir | `W` acelera, `S` freia/dá ré, `A` `D` viram |
+| Socar | `F` |
 | Cair / levantar | `R` |
 | Olhar | arrastar com o mouse (ou um dedo no celular) |
 | Zoom | roda do mouse / pinça |
 | Conversar | `Enter` (e `Esc` para sair do chat) |
 
-No celular aparecem um direcional virtual, um botão de pulo e um botão de ação
-(entrar/sair do carro ou levantar), que muda conforme o contexto.
+No celular aparecem um direcional virtual e botões de pulo, de ação
+(entrar/sair do carro ou levantar) e de soco (👊), que mudam conforme o
+contexto. O chat recolhe sozinho depois de alguns segundos sem interação: toque
+no botão redondo (ou aperte `Enter`) para abrir de novo. Mensagens recebidas
+com ele recolhido acendem um aviso.
+
+A cor do boneco é escolhida no menu e fica salva no navegador; ela aparece no
+boneco, na etiqueta e no chat. O menu nativo do navegador (clique direito ou
+toque longo) fica desativado fora dos campos de texto.
+
+Os bonecos **se esbarram** — ninguém atravessa ninguém — e um soco em quem está
+na frente e perto derruba o outro com ragdoll.
 
 O carro tem **quatro lugares** — o banco do motorista e mais três. Quem senta no
 banco do motorista dirige; os passageiros andam junto. Quem chega primeiro pega
@@ -141,14 +152,14 @@ style.css         visual dos painéis, menu e controles de toque
 server.mjs        servidor estático de desenvolvimento (sem dependências)
 js/main.js        liga tudo: cena, loop, entrada na sala, loop de rede
 js/world.js       céu em gradiente, luz com sombra, gramado plano e praça
-js/avatar.js      boneco low-poly com andar/correr/pular/sentado e etiqueta
+js/avatar.js      boneco low-poly com andar/correr/pular/sentar/socar e etiqueta
 js/player.js      controle e física do jogador local (relativo à câmera)
 js/car.js         buggy aberto de 4 lugares, direção arcade e colisão
 js/ragdoll.js     ragdoll de Verlet (13 pontos, restrições de distância) + rede
 js/camera.js      câmera em terceira pessoa com órbita amortecida
-js/network.js     malha P2P com PeerJS (sala, hello/welcome, estado, carro, ragdoll, chat, ping)
+js/network.js     malha P2P com PeerJS (sala, hello/welcome, estado, carro, ragdoll, soco, chat, ping)
 js/input.js       teclado + joystick virtual
-js/ui.js          menu, placar, chat, toasts, copiar convite
+js/ui.js          menu com seletor de cor, placar, chat recolhível, toasts
 js/utils.js       cores por nome, ângulos, códigos de sala
 ```
 
@@ -162,6 +173,7 @@ js/utils.js       cores por nome, ângulos, códigos de sala
 | `st` | `p` posição, `r` rotação, `s` velocidade, `a` no ar, `k` banco | 15×/s para cada par |
 | `car` | `x`, `z`, `yaw`, `v` velocidade, `st` volante | só o motorista, 20×/s |
 | `rag` | `p` lista de 13 pontos (ou `null` ao levantar) | dono do ragdoll, 12×/s |
+| `hit` | `to` alvo, `px`/`pz` de quem bateu, `dx`/`dz` direção | ao socar (para todos; só o alvo cai) |
 | `chat` | nome, cor, texto | ao enviar |
 | `ping` / `pong` | timestamp | a cada 2,5 s |
 | `bye` | — | ao sair |
@@ -173,7 +185,8 @@ O boneco remoto é interpolado entre as posições recebidas, então mesmo com
 quem está no banco do motorista (os outros perseguem a pose recebida), e cada
 ragdoll é simulado por quem caiu (os outros reproduzem os pontos). O ocupante de
 cada banco é deduzido do campo `k` que cada jogador manda — não existe um dono
-central da sala.
+central da sala. No soco, quem bateu calcula o alvo e manda a direção; quem
+levou confere a distância antes de acionar o próprio ragdoll.
 
 Para evitar conflito de banco, cada jogador escolhe o primeiro banco livre que
 conhece. Dois cliques simultâneos no mesmo banco são raros e se resolvem quando
@@ -190,6 +203,7 @@ __passear.me.player.pos  // sua posição
 __passear.car            // pose/velocidade do carro
 __passear.seat           // seu banco (-1 = a pé)
 __passear.ragdoll        // seu ragdoll quando está caído
+__passear.punch()        // dispara um soco (respeitando o alcance/cooldown)
 __passear.rig            // yaw, pitch, distância da câmera
 ```
 

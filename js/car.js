@@ -203,7 +203,8 @@ export class Car {
     this.steer = damp(this.steer, targetSteer, 7, dt);
 
     const grip = clamp(Math.abs(this.speed) / 3.5, 0, 1);
-    this.yaw += this.steer * cfg.turnRate * grip * dt * Math.sign(this.speed || 1);
+    // O carro olha para +Z: virar à direita (D) diminui o yaw.
+    this.yaw -= this.steer * cfg.turnRate * grip * dt * Math.sign(this.speed || 1);
 
     this.x += Math.sin(this.yaw) * this.speed * dt;
     this.z += Math.cos(this.yaw) * this.speed * dt;
@@ -227,7 +228,7 @@ export class Car {
     for (const wheel of this.wheels) {
       wheel.tyre.rotation.y = this.spin;
       wheel.rim.rotation.y = this.spin;
-      wheel.steerPivot.rotation.y = wheel.front ? this.steer * 0.42 : 0;
+      wheel.steerPivot.rotation.y = wheel.front ? -this.steer * 0.42 : 0;
     }
   }
 

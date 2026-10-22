@@ -204,6 +204,8 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
   let phase = Math.random() * Math.PI * 2;
   let idlePhase = phase;
   let bob = 0;
+  let punchTimer = 0;
+  const PUNCH_TIME = 0.36;
 
   const pose = {
     legL: 0, legR: 0, armL: 0, armR: 0, armLZ: 0.08, armRZ: -0.08, lean: 0, headTilt: 0,
@@ -266,7 +268,17 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
       targetBob = breathe * 0.012;
     }
 
-    const k = 1 - Math.exp(-14 * dt);
+    const punching = punchTimer > 0 && !sitting && !airborne;
+    if (punching) {
+      punchTimer = Math.max(0, punchTimer - dt);
+      const progress = 1 - punchTimer / PUNCH_TIME;
+      const swing = Math.sin(Math.min(1, progress * 1.25) * Math.PI);
+      armR = -2.1 * swing;
+      armRZ = -0.22 - 0.1 * (1 - swing);
+      lean += 0.09 * swing;
+    }
+
+    const k = 1 - Math.exp(-(punching ? 30 : 14) * dt);
     pose.legL += (legL - pose.legL) * k;
     pose.legR += (legR - pose.legR) * k;
     pose.armL += (armL - pose.armL) * k;
@@ -287,6 +299,11 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     belt.rotation.x = pose.lean;
     head.rotation.x = pose.headTilt;
     rig.position.y = bob;
+  }
+
+  /** Começa a animação de soco. */
+  function punch() {
+    punchTimer = PUNCH_TIME;
   }
 
   function setName(next) {
@@ -326,6 +343,7 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     name: currentName,
     color: currentColor,
     update: animate,
+    punch,
     setName,
     setColor,
     dispose,

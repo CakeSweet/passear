@@ -1,5 +1,19 @@
 export const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
+/**
+ * Prende (x, z) de um objeto/Vector3 dentro do círculo de raio `radius`.
+ * Retorna `true` se precisou corrigir a posição.
+ */
+export function clampToWorld(pos, radius) {
+  const distance = Math.hypot(pos.x, pos.z);
+  if (!Number.isFinite(distance) || distance <= radius) return false;
+
+  const scale = radius / distance;
+  pos.x *= scale;
+  pos.z *= scale;
+  return true;
+}
+
 export const lerp = (a, b, t) => a + (b - a) * t;
 
 /** Interpolação independente de framerate. */
@@ -53,7 +67,10 @@ export function colorForName(name = '') {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-export function randomCode(length = 5) {
+/** Tamanho dos códigos de sala (ex.: ABC12). */
+export const ROOM_CODE_LENGTH = 5;
+
+export function randomCode(length = ROOM_CODE_LENGTH) {
   let out = '';
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
@@ -62,11 +79,30 @@ export function randomCode(length = 5) {
 }
 
 export function sanitizeCode(value = '') {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LENGTH);
 }
 
 export function sanitizeName(value = '') {
   return value.replace(/\s+/g, ' ').trim().slice(0, 16);
+}
+
+/** Lê do localStorage sem quebrar em modo privado/bloqueado. */
+export function storageGet(key, fallback = null) {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Grava no localStorage sem quebrar em modo privado/bloqueado. */
+export function storageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    /* armazenamento indisponível: o jogo funciona sem persistir */
+  }
 }
 
 export const isTouch = () =>

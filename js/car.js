@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { clamp, damp, dampAngle } from './utils.js';
+import { clamp, clampToWorld, damp, dampAngle } from './utils.js';
 
 /**
  * Bancos do carro, em coordenadas locais. O carro olha para +Z (mesma
@@ -28,6 +28,8 @@ export class Car {
     this.speed = 0;
     this.steer = 0;
     this.spin = 0;
+    /** Preenchido por main.js: mantém o carro fora da plataforma do ringue. */
+    this.ring = null;
 
     this.group = new THREE.Group();
     this._materials = [];
@@ -168,6 +170,7 @@ export class Car {
     if (Number.isFinite(pose.yaw)) this.yaw = pose.yaw;
     if (Number.isFinite(pose.v)) this.speed = pose.v;
     if (Number.isFinite(pose.st)) this.steer = pose.st;
+    clampToWorld(this, CONFIG.world.bounds - 2);
   }
 
   /** Quem não está dirigindo persegue a pose recebida pela rede. */
@@ -179,6 +182,7 @@ export class Car {
     this.yaw = dampAngle(this.yaw, pose.yaw, 16, dt);
     this.speed = damp(this.speed, Number(pose.v) || 0, 12, dt);
     this.steer = damp(this.steer, Number(pose.st) || 0, 10, dt);
+    clampToWorld(this, CONFIG.world.bounds - 2);
   }
 
   /** Direção arcade: acelera, freia e vira mais quanto mais rápido. */
@@ -209,14 +213,22 @@ export class Car {
     this.x += Math.sin(this.yaw) * this.speed * dt;
     this.z += Math.cos(this.yaw) * this.speed * dt;
 
-    const limit = CONFIG.world.bounds - 2;
-    const distance = Math.hypot(this.x, this.z);
-    if (distance > limit) {
-      const scale = limit / distance;
-      this.x *= scale;
-      this.z *= scale;
-      this.speed *= 0.25;
+    if (this.ring) {
+      const dx = this.x - this.ring.x;
+      const dz = this.z - this.ring.z;
+      const distance = Math.hypot(dx, dz);
+      const minDistance = this.ring.radius + 1.45;
+      if (distance < minDistance) {
+        const nx = distance > 0.0001 ? dx / distance : 1;
+        const nz = distance > 0.0001 ? dz / distance : 0;
+        this.x = this.ring.x + nx * minDistance;
+        this.z = this.ring.z + nz * minDistance;
+        this.speed *= 0.25;
+      }
     }
+
+    const limit = CONFIG.world.bounds - 2;
+    if (clampToWorld(this, limit)) this.speed *= 0.25;
   }
 
   sync(dt) {

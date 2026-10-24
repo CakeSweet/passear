@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { clamp, dampAngle } from './utils.js';
+import { clampToWorld, dampAngle } from './utils.js';
 
 const forwardVec = new THREE.Vector3();
 const rightVec = new THREE.Vector3();
@@ -16,11 +16,14 @@ export class LocalPlayer {
     this.yaw = 0;
     this.onGround = true;
     this.speed = 0;
+    this.crouching = false;
+    /** Altura do piso no ponto (para o ringue); 0 = gramado. */
+    this.groundAt = null;
   }
 
   spawn(x = 0, z = 0, yaw = 0) {
-    const limit = CONFIG.world.bounds - 1;
-    this.pos.set(clamp(x, -limit, limit), 0, clamp(z, -limit, limit));
+    this.pos.set(x, 0, z);
+    clampToWorld(this.pos, CONFIG.world.bounds - 1);
     this.velocity.set(0, 0);
     this.vy = 0;
     this.yaw = yaw;
@@ -31,6 +34,8 @@ export class LocalPlayer {
 
   update(dt, input, cameraYaw) {
     const { walk, run, accel, jump, gravity, turn } = CONFIG.move;
+
+    this.crouching = Boolean(input.crouch) && this.onGround;
 
     // direção relativa à câmera
     forwardVec.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
@@ -44,9 +49,9 @@ export class LocalPlayer {
     const wishLength = wishVec.length();
     if (wishLength > 1) wishVec.divideScalar(wishLength);
 
-    const maxSpeed = input.run ? run : walk;
-    const targetX = wishVec.x * maxSpeed;
-    const targetZ = wishVec.z * maxSpeed;
+    const speedLimit = this.crouching ? walk * 0.48 : input.run ? run : walk;
+    const targetX = wishVec.x * speedLimit;
+    const targetZ = wishVec.z * speedLimit;
 
     const k = 1 - Math.exp(-accel * dt);
     this.velocity.x += (targetX - this.velocity.x) * k;
@@ -56,18 +61,25 @@ export class LocalPlayer {
     this.pos.z += this.velocity.y * dt;
 
     // limite circular do mundo
-    const limit = CONFIG.world.bounds;
-    const distance = Math.hypot(this.pos.x, this.pos.z);
-    if (distance > limit) {
-      const scale = limit / distance;
-      this.pos.x *= scale;
-      this.pos.z *= scale;
+    if (clampToWorld(this.pos, CONFIG.world.bounds)) {
       this.velocity.multiplyScalar(0.4);
     }
 
     if (wishLength > 0.05) {
       const targetYaw = Math.atan2(wishVec.x, wishVec.z);
       this.yaw = dampAngle(this.yaw, targetYaw, turn, dt);
+    }
+
+    // Sobe degraus/rampa quando a diferença é pequena; o ringue usa isso.
+    const floor = this.groundAt ? this.groundAt(this.pos.x, this.pos.z) : 0;
+    if (this.onGround && Math.abs(floor - this.pos.y) <= 0.28) {
+      // acompanha a rampa suavemente, para cima ou para baixo
+      this.pos.y = floor;
+      this.vy = 0;
+    } else if (this.onGround && floor > this.pos.y && floor - this.pos.y <= 0.62) {
+      // degrau baixo (borda do ringue)
+      this.pos.y = floor;
+      this.vy = 0;
     }
 
     if (input.jump && this.onGround) {
@@ -78,17 +90,19 @@ export class LocalPlayer {
     this.vy -= gravity * dt;
     this.pos.y += this.vy * dt;
 
-    if (this.pos.y <= 0) {
-      this.pos.y = 0;
+    if (this.pos.y <= floor) {
+      this.pos.y = floor;
       this.vy = 0;
       this.onGround = true;
+    } else {
+      this.onGround = false;
     }
 
     this.speed = Math.hypot(this.velocity.x, this.velocity.y);
 
     this.avatar.root.position.copy(this.pos);
     this.avatar.root.rotation.y = this.yaw;
-    this.avatar.update(dt, this.speed, !this.onGround);
+    this.avatar.update(dt, this.speed, !this.onGround, false, this.crouching);
   }
 
   _apply() {
@@ -107,6 +121,7 @@ export class LocalPlayer {
       s: Math.round(this.speed * 100) / 100,
       a: this.onGround ? 0 : 1,
       k: Number.isFinite(seat) ? seat : -1,
+      c: this.crouching ? 1 : 0,
     };
   }
 }

@@ -91,6 +91,89 @@ function makePlazaTexture() {
   return texture;
 }
 
+/** Posição e medidas do ringue de ragdoll combat. */
+export const RING = {
+  x: 0,
+  z: 24,
+  radius: 7.2,
+  height: 0.55,
+  rampWidth: 3.6,
+  rampLength: 4.2,
+};
+
+/** Altura do piso no ringue: lona elevada + rampa de entrada. */
+export function ringFloorHeight(x, z) {
+  const dx = x - RING.x;
+  const dz = z - RING.z;
+  const distance = Math.hypot(dx, dz);
+
+  if (distance <= RING.radius) return RING.height;
+
+  // rampa no lado que olha para a praça (z negativo em relação ao ringue)
+  if (
+    Math.abs(dx) <= RING.rampWidth / 2 &&
+    dz < -RING.radius &&
+    dz >= -RING.radius - RING.rampLength
+  ) {
+    const t = (-dz - RING.radius) / RING.rampLength;
+    return RING.height * (1 - t);
+  }
+
+  return 0;
+}
+
+function makeRingTexture() {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 30, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, '#b34a5c');
+  gradient.addColorStop(0.55, '#8f2f43');
+  gradient.addColorStop(1, '#5c1d2c');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  // círculos concêntricos da lona
+  ctx.strokeStyle = 'rgba(255, 226, 207, 0.72)';
+  ctx.lineWidth = 8;
+  for (const radius of [size * 0.19, size * 0.34, size * 0.46]) {
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = 'rgba(255, 226, 207, 0.26)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(size / 2 + Math.cos(angle) * size * 0.19, size / 2 + Math.sin(angle) * size * 0.19);
+    ctx.lineTo(size / 2 + Math.cos(angle) * size * 0.46, size / 2 + Math.sin(angle) * size * 0.46);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = 'rgba(255, 240, 230, 0.92)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 116px system-ui, "Segoe UI", Arial, sans-serif';
+  ctx.fillText('RAGDOLL', size / 2, size / 2 - 42);
+  ctx.font = '800 62px system-ui, "Segoe UI", Arial, sans-serif';
+  ctx.fillStyle = 'rgba(255, 218, 205, 0.86)';
+  ctx.fillText('COMBAT', size / 2, size / 2 + 58);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  // A lona é vista de frente para a rampa: gira o desenho para o texto ficar
+  // legível para quem chega pela praça.
+  texture.center.set(0.5, 0.5);
+  texture.rotation = Math.PI;
+  return texture;
+}
+
 /**
  * Cria a cena: céu em gradiente, luz com sombra, chão plano e a praça central.
  */
@@ -175,6 +258,94 @@ export function createWorld(renderer) {
   boundary.position.y = 0.008;
   scene.add(boundary);
 
+  // ------------------------------------------------------------- ringue
+  const ringGroup = new THREE.Group();
+  ringGroup.position.set(RING.x, 0, RING.z);
+  scene.add(ringGroup);
+
+  const apron = new THREE.Mesh(
+    new THREE.CylinderGeometry(RING.radius + 0.2, RING.radius + 0.35, 0.28, 64),
+    new THREE.MeshStandardMaterial({ color: 0x2b1c25, roughness: 0.9, metalness: 0.05 }),
+  );
+  apron.position.y = 0.14;
+  apron.receiveShadow = true;
+  ringGroup.add(apron);
+
+  const platform = new THREE.Mesh(
+    new THREE.CylinderGeometry(RING.radius, RING.radius, RING.height, 64),
+    new THREE.MeshStandardMaterial({ color: 0x4a2632, roughness: 0.88, metalness: 0.02 }),
+  );
+  platform.position.y = RING.height / 2;
+  platform.castShadow = true;
+  platform.receiveShadow = true;
+  ringGroup.add(platform);
+
+  const canvasMat = new THREE.MeshStandardMaterial({
+    map: makeRingTexture(),
+    roughness: 0.82,
+    metalness: 0.01,
+  });
+  const canvasTop = new THREE.Mesh(new THREE.CircleGeometry(RING.radius - 0.06, 64), canvasMat);
+  canvasTop.rotation.x = -Math.PI / 2;
+  canvasTop.position.y = RING.height + 0.003;
+  canvasTop.receiveShadow = true;
+  ringGroup.add(canvasTop);
+
+  // rampa de entrada, no lado voltado para a praça
+  const rampAngle = Math.atan2(RING.height, RING.rampLength);
+  const ramp = new THREE.Mesh(
+    new THREE.BoxGeometry(RING.rampWidth, 0.14, RING.rampLength),
+    new THREE.MeshStandardMaterial({ color: 0x6f4a35, roughness: 0.92 }),
+  );
+  ramp.position.set(
+    0,
+    RING.height - 0.07 - (RING.rampLength / 2) * Math.sin(rampAngle),
+    -RING.radius - RING.rampLength / 2,
+  );
+  ramp.rotation.x = -rampAngle;
+  ramp.castShadow = true;
+  ramp.receiveShadow = true;
+  ringGroup.add(ramp);
+
+  const postGeo = new THREE.CylinderGeometry(0.07, 0.09, 2.25, 10);
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.42, metalness: 0.55 });
+  const postCapGeo = new THREE.SphereGeometry(0.1, 10, 8);
+  const postCapMat = new THREE.MeshStandardMaterial({ color: 0xd7dde3, roughness: 0.35, metalness: 0.5 });
+  const postRadius = RING.radius + 0.5;
+
+  for (let i = 0; i < 8; i++) {
+    // desloca meia casa para não nascer um poste no meio da rampa
+    const angle = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.set(Math.cos(angle) * postRadius, 1.12, Math.sin(angle) * postRadius);
+    post.castShadow = true;
+    ringGroup.add(post);
+
+    const cap = new THREE.Mesh(postCapGeo, postCapMat);
+    cap.position.set(post.position.x, 2.27, post.position.z);
+    cap.castShadow = true;
+    ringGroup.add(cap);
+  }
+
+  const ropeGeo = new THREE.TorusGeometry(postRadius, 0.038, 8, 96);
+  const ropeColors = [0xe05b4f, 0xf2e9df, 0x5b9cf6];
+  [1.12, 1.58, 2.04].forEach((height, index) => {
+    const rope = new THREE.Mesh(
+      ropeGeo,
+      new THREE.MeshStandardMaterial({ color: ropeColors[index], roughness: 0.55, metalness: 0.08 }),
+    );
+    rope.rotation.x = Math.PI / 2;
+    rope.position.y = height;
+    rope.castShadow = true;
+    ringGroup.add(rope);
+  });
+
+  const ring = {
+    ...RING,
+    group: ringGroup,
+    floorHeightAt: ringFloorHeight,
+  };
+
   const offset = new THREE.Vector3(24, 34, 16);
 
   /** Mantém a luz/sombra acompanhando quem joga. */
@@ -184,5 +355,5 @@ export function createWorld(renderer) {
     sun.target.updateMatrixWorld();
   }
 
-  return { scene, sun, ground, plaza, updateSun };
+  return { scene, sun, ground, plaza, ring, updateSun };
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clampToWorld } from './utils.js';
 
 /**
  * Ragdoll por integração de Verlet: cada articulação é um ponto com massa e as
@@ -76,8 +77,9 @@ const GRAVITY = 20;
 const ITERATIONS = 8;
 
 export class Ragdoll {
-  constructor({ color = '#ff7d6b', skin = 0xd09a6a, bounds = 88 } = {}) {
+  constructor({ color = '#ff7d6b', skin = 0xd09a6a, bounds = 88, floorAt = null } = {}) {
     this.bounds = bounds;
+    this.floorAt = floorAt;
     this.remote = false;
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -262,24 +264,21 @@ export class Ragdoll {
         b.z -= dz;
       }
 
-      // chão + limite do mundo
+      // chão (grama ou lona do ringue) + limite do mundo
       for (let i = 0; i < COUNT; i++) {
         const p = this.points[i];
         const r = RADIUS[i];
+        const floor = this.floorAt ? this.floorAt(p.x, p.z) : 0;
 
-        if (p.y < r) {
+        if (p.y < floor + r) {
           const q = this.prev[i];
-          p.y = r;
+          p.y = floor + r;
           q.x = p.x - (p.x - q.x) * 0.72;
           q.z = p.z - (p.z - q.z) * 0.72;
           q.y = p.y;
         }
 
-        const limit = this.bounds;
-        if (p.x > limit) p.x = limit;
-        else if (p.x < -limit) p.x = -limit;
-        if (p.z > limit) p.z = limit;
-        else if (p.z < -limit) p.z = -limit;
+        clampToWorld(p, this.bounds);
       }
     }
   }

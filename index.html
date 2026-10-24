@@ -10,7 +10,7 @@
 
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=18" />
 
   <script type="importmap">
     {
@@ -44,6 +44,8 @@
         <span class="stat"><b id="onlineCount">1</b> online</span>
         <span class="sep"></span>
         <span class="stat">ping <b id="pingValue">—</b><small>ms</small></span>
+        <button id="soundBtn" class="sound-btn" type="button" aria-label="Desligar som" aria-pressed="true" title="Ligar/desligar som">🔊</button>
+        <button id="viewBtn" class="view-btn" type="button" aria-label="Câmera em terceira pessoa" aria-pressed="false" title="Alternar 1ª/3ª pessoa (V)">3ª</button>
       </div>
     </div>
 
@@ -61,7 +63,7 @@
       </form>
     </section>
 
-    <div class="hint" id="hint">WASD mover · arraste para olhar · espaço pular · E carro · F socar · R cair</div>
+    <div class="hint" id="hint">WASD mover · arraste para olhar · espaço pular · C agachar · V câmera · E carro · F socar · R cair</div>
     <div id="prompt" class="prompt is-hidden" role="status"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
@@ -85,7 +87,7 @@
 
       <label class="field">
         <span>Código da sala</span>
-        <input id="codeInput" maxlength="6" placeholder="ABC12" autocomplete="off" spellcheck="false" />
+        <input id="codeInput" maxlength="5" placeholder="ABC12" autocomplete="off" spellcheck="false" />
       </label>
 
       <div class="actions">
@@ -103,6 +105,10 @@
           <li>Quem cria a sala só apresenta as pessoas umas às outras. Depois todos falam entre si, sem passar por servidor.</li>
           <li>Perto do carro, aperte <b>E</b> para entrar (o banco do motorista é seu se estiver livre). Dentro dele, <b>W/S</b> acelera e freia e <b>A/D</b> vira. <b>E</b> de novo para descer.</li>
           <li><b>F</b> dá um soco em quem estiver na frente — o outro cai com ragdoll. <b>R</b> também joga o boneco no chão, e quem é atropelado por um carro rápido cai do mesmo jeito.</li>
+          <li><b>C</b> (ou <b>Ctrl</b>) agacha e diminui a velocidade. No toque, use o botão <b>⤓</b>.</li>
+          <li>Aproxime o <b>zoom</b> até o fim para entrar em <b>primeira pessoa</b>; afaste para voltar. <b>V</b> (ou o botão <b>1ª/3ª</b>) alterna quando quiser.</li>
+          <li>O <b>ringue de ragdoll combat</b> fica reto ao norte da praça. Suba pela rampa e use <b>F</b> para jogar os outros para fora.</li>
+          <li>O botão <b>🔊</b> liga/desliga os sons; a escolha fica salva no navegador.</li>
           <li>Sua cor aparece no boneco, no nome e no chat. Ela fica salva no navegador.</li>
           <li>Ideal até ~8 pessoas por sala. O servidor PeerJS é usado apenas para o encontro inicial.</li>
         </ul>
@@ -116,6 +122,7 @@
     </div>
     <button id="actionBtn" class="action is-hidden" type="button" aria-label="Entrar ou sair do carro"></button>
     <button id="punchBtn" class="punch is-hidden" type="button" aria-label="Socar">👊</button>
+    <button id="crouchBtn" class="crouch" type="button" aria-label="Agachar">⤓</button>
     <button id="jumpBtn" class="jump" type="button" aria-label="Pular">↑</button>
   </div>
 

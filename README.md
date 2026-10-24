@@ -3,7 +3,8 @@
 Um mundo 3D plano e multiplayer, direto entre navegadores. Você cria uma sala,
 manda o código (ou o link) para alguém e os dois aparecem no mesmo gramado como
 bonecos 3D que andam, pulam, conversam por chat, andam de carro, se esbarram,
-socam uns aos outros e caem no chão com física de ragdoll.
+socam uns aos outros e caem no chão com física de ragdoll. Tem até um ringue
+elevado para levar a briga a sério.
 
 **Jogue agora:** <https://cakesweet.github.io/passear/>
 
@@ -31,7 +32,7 @@ endereço `http://SEU-IP:5173` que o terminal mostra ao iniciar.
 
 ### Jogar sozinho para testar
 
-1. Clique em **Criar sala**. Um código de 5 letras aparece no topo.
+1. Clique em **Criar sala**. Um código de 5 caracteres aparece no topo.
 2. Abra outra aba, cole o código no campo e clique em **Entrar**.
 3. Ande com **WASD** em uma aba e veja o outro boneco se mover na outra.
 
@@ -42,19 +43,22 @@ endereço `http://SEU-IP:5173` que o terminal mostra ao iniciar.
 | Andar | `W` `A` `S` `D` ou setas |
 | Correr | `Shift` |
 | Pular | `Espaço` |
+| Agachar | `C` ou `Ctrl` |
 | Entrar / sair do carro | `E` (perto do carro) |
 | Dirigir | `W` acelera, `S` freia/dá ré, `A` `D` viram |
 | Socar | `F` |
 | Cair / levantar | `R` |
 | Olhar | arrastar com o mouse (ou um dedo no celular) |
 | Zoom | roda do mouse / pinça |
+| Primeira/terceira pessoa | aproxime o zoom até o fim, afaste para voltar, ou aperte `V` |
+| Som | botão 🔊 no HUD |
 | Conversar | `Enter` (e `Esc` para sair do chat) |
 
 No celular aparecem um direcional virtual e botões de pulo, de ação
-(entrar/sair do carro ou levantar) e de soco (👊), que mudam conforme o
-contexto. O chat recolhe sozinho depois de alguns segundos sem interação: toque
-no botão redondo (ou aperte `Enter`) para abrir de novo. Mensagens recebidas
-com ele recolhido acendem um aviso.
+(entrar/sair do carro ou levantar), de soco (👊) e de agachar (⤓), que mudam
+conforme o contexto. O chat recolhe sozinho depois de alguns segundos sem
+interação: toque no botão redondo (ou aperte `Enter`) para abrir de novo.
+Mensagens recebidas com ele recolhido acendem um aviso e tocam um sino curto.
 
 A cor do boneco é escolhida no menu e fica salva no navegador; ela aparece no
 boneco, na etiqueta e no chat. O menu nativo do navegador (clique direito ou
@@ -67,6 +71,15 @@ O carro tem **quatro lugares** — o banco do motorista e mais três. Quem senta
 banco do motorista dirige; os passageiros andam junto. Quem chega primeiro pega
 o banco livre de menor número. Carros em movimento derrubam quem está no caminho
 (ragdoll automático).
+
+O **ringue de ragdoll combat** fica reto ao norte da praça, no fim do gramado.
+A plataforma é elevada e tem rampa de entrada; a lona, as cordas e os postes são
+só o cenário — o piso elevado vale para o jogador e para o ragdoll. Empurre,
+soque e derrube os outros para fora. O carro não sobe no ringue.
+
+Os sons são sintetizados no próprio navegador com Web Audio API (sem baixar
+arquivos): passos na grama, soco, mensagem, entrada na sala e motor do carro.
+O áudio só começa depois de um clique/toque/tecla, como exigem os navegadores.
 
 ## Como a conexão funciona
 
@@ -110,7 +123,7 @@ Tudo em [`js/config.js`](js/config.js):
 | `car.maxSpeed` / `accel` / `brake` / `turnRate` | Direção arcade: velocidade, aceleração, freio e velocidade de curva. |
 | `car.enterRadius` | Distância para conseguir entrar no carro. |
 | `ragdoll.syncHz` | Frequência com que o dono manda as posições do ragdoll. |
-| `ragdoll.maxMs` / `minMs` | Tempo máximo caído e tempo mínimo antes de poder levantar. |
+| `ragdoll.maxMs` / `minMs` | Tempo máximo caído e tempo mínimo para levantar sozinho (R levanta na hora). |
 
 ### Servidor de sinalização próprio
 
@@ -151,12 +164,13 @@ index.html        tela inicial, HUD e chat
 style.css         visual dos painéis, menu e controles de toque
 server.mjs        servidor estático de desenvolvimento (sem dependências)
 js/main.js        liga tudo: cena, loop, entrada na sala, loop de rede
-js/world.js       céu em gradiente, luz com sombra, gramado plano e praça
-js/avatar.js      boneco low-poly com andar/correr/pular/sentar/socar e etiqueta
+js/world.js       céu em gradiente, luz com sombra, gramado, praça e ringue
+js/avatar.js      boneco low-poly com andar/correr/pular/agachar/sentar/socar
 js/player.js      controle e física do jogador local (relativo à câmera)
 js/car.js         buggy aberto de 4 lugares, direção arcade e colisão
 js/ragdoll.js     ragdoll de Verlet (13 pontos, restrições de distância) + rede
-js/camera.js      câmera em terceira pessoa com órbita amortecida
+js/camera.js      câmera em terceira pessoa com órbita e primeira pessoa
+js/audio.js       sons sintetizados com Web Audio (passos, soco, chat, carro)
 js/network.js     malha P2P com PeerJS (sala, hello/welcome, estado, carro, ragdoll, soco, chat, ping)
 js/input.js       teclado + joystick virtual
 js/ui.js          menu com seletor de cor, placar, chat recolhível, toasts

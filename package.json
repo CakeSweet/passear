@@ -7,8 +7,5 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
-  },
-  "dependencies": {
-    "puppeteer-core": "^24.43.1"
   }
 }

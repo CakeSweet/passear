@@ -2,6 +2,11 @@ import { CONFIG } from './config.js';
 
 const ROOM_PREFIX = `${CONFIG.prefix}room-`;
 
+/** Atrasos das tentativas de reconexão da malha (ms). */
+const RETRY_DELAYS = [1000, 2000, 4000, 8000, 15000];
+/** Tempo máximo para uma tentativa de reconexão abrir o canal. */
+const RETRY_DIAL_TIMEOUT_MS = 6000;
+
 /**
  * Malha P2P com PeerJS.
  *
@@ -31,6 +36,14 @@ export class Network {
     /** id -> perfil conhecido (mesmo antes de conectar) */
     this.known = new Map();
     this.dialing = new Set();
+    /** id -> timeout da próxima tentativa de reconexão */
+    this.retryTimers = new Map();
+    /** id -> timeout da tentativa de reconexão em andamento */
+    this.retryWatchdogs = new Map();
+    /** id -> quantidade de tentativas automáticas já agendadas */
+    this.retryCount = new Map();
+    /** Evita repetir o aviso de anfitrião perdido a cada tentativa. */
+    this.hostLost = false;
 
     this.localPos = [0, 0, 0];
     /** Banco que o jogador local ocupa (-1 = a pé). */
@@ -231,9 +244,12 @@ export class Network {
       color: entry.color,
       pos: entry.pos,
     });
+    // Uma conexão nova cancela uma reconexão que ainda estava agendada.
+    this._clearRetryTimers(remoteId);
 
     const greet = () => {
       this.dialing.delete(remoteId);
+      this._clearRetryTimers(remoteId);
       this._send(conn, {
         t: 'hello',
         name: this.profile.name,
@@ -246,30 +262,102 @@ export class Network {
     conn.on('open', greet);
     if (conn.open) greet();
 
-    conn.on('data', (message) => this._onData(remoteId, message));
-    conn.on('close', () => this._drop(remoteId));
-    conn.on('error', () => this._drop(remoteId));
+    conn.on('data', (message) => this._onData(remoteId, message, conn));
+    // O `conn` evita que um evento atrasado da conexão antiga derrube a nova.
+    conn.on('close', () => this._drop(remoteId, { conn }));
+    conn.on('error', () => this._drop(remoteId, { conn }));
+  }
+
+  /** Diz se este lado é quem deve discar para o peer (regra do ID menor). */
+  _canDial(remoteId) {
+    if (this.closed || !this.peer || this.peer.destroyed) return false;
+    // A conexão com o anfitrião é sempre iniciativa do convidado.
+    if (this.role === 'guest' && remoteId === this.hostId) return true;
+    // O anfitrião só recebe convidados; não disca para eles.
+    if (this.role === 'host') return false;
+    if (!this.id || remoteId === this.hostId) return false;
+    return this.id < remoteId;
+  }
+
+  _clearRetryTimers(remoteId) {
+    const timer = this.retryTimers.get(remoteId);
+    if (timer) clearTimeout(timer);
+    this.retryTimers.delete(remoteId);
+
+    const watchdog = this.retryWatchdogs.get(remoteId);
+    if (watchdog) clearTimeout(watchdog);
+    this.retryWatchdogs.delete(remoteId);
+  }
+
+  _clearAllRetries() {
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
+    for (const watchdog of this.retryWatchdogs.values()) clearTimeout(watchdog);
+    this.retryTimers.clear();
+    this.retryWatchdogs.clear();
+    this.retryCount.clear();
+    this.dialing.clear();
+  }
+
+  /** Agenda uma nova tentativa após uma queda inesperada. */
+  _scheduleRetry(remoteId) {
+    if (this.closed || !this._canDial(remoteId)) return;
+    if (this.retryTimers.has(remoteId) || this.peers.has(remoteId)) return;
+
+    const attempt = this.retryCount.get(remoteId) ?? 0;
+    if (attempt >= RETRY_DELAYS.length) return;
+    this.retryCount.set(remoteId, attempt + 1);
+
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(remoteId);
+      if (this.closed || this.peers.has(remoteId)) return;
+
+      // O timeout de 8s do _maybeDial não pode barrar a nova tentativa.
+      this.dialing.delete(remoteId);
+      this._maybeDial(remoteId);
+
+      const conn = this.peers.get(remoteId)?.conn;
+      if (!conn || conn.open) return;
+
+      // Se o PeerJS não emitir close/error, a tentativa não pode ficar pendurada.
+      const watchdog = setTimeout(() => {
+        this.retryWatchdogs.delete(remoteId);
+        const current = this.peers.get(remoteId)?.conn;
+        if (!this.closed && current === conn && !conn.open) this._drop(remoteId);
+      }, RETRY_DIAL_TIMEOUT_MS);
+      this.retryWatchdogs.set(remoteId, watchdog);
+    }, RETRY_DELAYS[attempt]);
+
+    this.retryTimers.set(remoteId, timer);
   }
 
   _maybeDial(remoteId) {
-    if (!remoteId || remoteId === this.id || remoteId === this.hostId) return;
+    if (!remoteId || remoteId === this.id) return;
     if (this.peers.has(remoteId) || this.dialing.has(remoteId)) return;
-    // Só o ID menor disca (evita duplicidade).
-    if (!(this.id < remoteId)) return;
-    if (!this.peer || this.peer.destroyed) return;
+    if (!this._canDial(remoteId)) return;
 
     this.dialing.add(remoteId);
-    const conn = this.peer.connect(remoteId, { reliable: true, serialization: 'json' });
-    this._attach(conn, true);
+    try {
+      const conn = this.peer.connect(remoteId, { reliable: true, serialization: 'json' });
+      this._attach(conn, true);
+    } catch {
+      this.dialing.delete(remoteId);
+      this._scheduleRetry(remoteId);
+      return;
+    }
 
     setTimeout(() => this.dialing.delete(remoteId), 8000);
   }
 
-  _drop(remoteId) {
+  _drop(remoteId, { intentional = false, conn = null } = {}) {
     const entry = this.peers.get(remoteId);
     if (!entry) return;
+    // Evento atrasado de uma conexão que já foi substituída por uma nova.
+    if (conn && entry.conn !== conn) return;
 
     this.peers.delete(remoteId);
+    this.dialing.delete(remoteId);
+    this._clearRetryTimers(remoteId);
+
     try {
       entry.conn.close();
     } catch {
@@ -277,7 +365,20 @@ export class Network {
     }
 
     this.emit('peer-leave', { id: remoteId, name: entry.name, color: entry.color });
-    if (remoteId === this.hostId) this.emit('host-lost');
+
+    if (remoteId === this.hostId && !this.hostLost) {
+      this.hostLost = true;
+      this.emit('host-lost');
+    }
+
+    if (intentional || this.closed) {
+      // Saída avisada: não adianta tentar de novo; esquece o perfil.
+      this.retryCount.delete(remoteId);
+      this.known.delete(remoteId);
+      return;
+    }
+
+    this._scheduleRetry(remoteId);
   }
 
   // -------------------------------------------------------------- mensagens
@@ -291,10 +392,12 @@ export class Network {
     }
   }
 
-  _onData(remoteId, message) {
+  _onData(remoteId, message, conn = null) {
     if (!message || typeof message !== 'object') return;
 
     const entry = this.peers.get(remoteId);
+    // Mensagem atrasada de uma conexão que já foi substituída/derrubada.
+    if (conn && (!entry || entry.conn !== conn)) return;
 
     switch (message.t) {
       case 'hello': {
@@ -313,6 +416,10 @@ export class Network {
           seat: Number.isFinite(message.seat) ? message.seat : -1,
         };
         this.known.set(remoteId, profile);
+        // Um hello é sinal de canal saudável: zera o contador de retentativas.
+        this.retryCount.delete(remoteId);
+        this._clearRetryTimers(remoteId);
+        if (remoteId === this.hostId) this.hostLost = false;
 
         this.emit('peer-join', profile);
 
@@ -361,7 +468,7 @@ export class Network {
       }
 
       case 'peer-leave':
-        this._drop(remoteId);
+        this._drop(remoteId, { intentional: true });
         break;
 
       case 'st':
@@ -405,7 +512,7 @@ export class Network {
       }
 
       case 'bye':
-        this._drop(remoteId);
+        this._drop(remoteId, { intentional: true });
         break;
 
       default:
@@ -419,7 +526,7 @@ export class Network {
   broadcastState(state) {
     this.localPos = state.p;
     this.localSeat = Number.isFinite(state.k) ? state.k : -1;
-    const message = { t: 'st', p: state.p, r: state.r, s: state.s, a: state.a, k: this.localSeat };
+    const message = { t: 'st', p: state.p, r: state.r, s: state.s, a: state.a, k: this.localSeat, c: Number(state.c) ? 1 : 0 };
     for (const peer of this.peers.values()) this._send(peer.conn, message);
   }
 
@@ -480,6 +587,7 @@ export class Network {
   destroy() {
     if (this.closed) return;
     this.closed = true;
+    this._clearAllRetries();
 
     for (const timer of this.timers) clearInterval(timer);
     this.timers = [];

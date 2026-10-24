@@ -126,6 +126,43 @@ html, body {
 .stats small { margin-left: 2px; }
 .sep { width: 1px; height: 16px; background: var(--line); }
 
+.sound-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.view-btn {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sound-btn:hover,
+.view-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.sound-btn:active,
+.view-btn:active { transform: scale(0.94); }
+.sound-btn[aria-pressed="false"],
+.view-btn[aria-pressed="false"] { color: var(--muted); }
+
 .people {
   grid-column: 2;
   grid-row: 2;
@@ -663,6 +700,25 @@ html, body {
 
 .punch:active { background: rgba(255, 143, 107, 0.45); }
 
+.crouch {
+  position: absolute;
+  right: max(116px, calc(env(safe-area-inset-right) + 116px));
+  bottom: max(128px, calc(env(safe-area-inset-bottom) + 128px));
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(107, 208, 196, 0.45);
+  background: rgba(9, 14, 20, 0.42);
+  color: var(--text);
+  font-size: 25px;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.crouch:active { background: rgba(107, 208, 196, 0.38); }
+
 .noscript {
   position: fixed;
   inset: 0;
@@ -684,9 +740,11 @@ html, body {
   .hud { padding: 12px; gap: 8px; }
   .chat {
     grid-column: 1 / -1;
-    justify-self: center;
-    width: min(92vw, 360px);
-    margin-bottom: 236px;
+    grid-row: 2;
+    align-self: start;
+    justify-self: end;
+    width: min(62vw, 240px);
+    margin-bottom: 0;
   }
   .chat-log { max-height: 60px; }
   .hint { display: none; }
@@ -695,7 +753,34 @@ html, body {
   .stats { padding: 10px 12px; font-size: 12px; }
   .card { padding: 22px; gap: 14px; }
   .card h1 { font-size: 34px; }
-  .toasts { bottom: 372px; }
+  .toasts {
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: 230px;
+    transform: none;
+    align-items: flex-end;
+  }
+}
+
+/* telas estreitas: compacta o suficiente para sala + stats + botões caberem */
+@media (max-width: 430px) {
+  .hud { padding: 10px; gap: 6px; }
+  .room { padding: 7px 8px 7px 10px; gap: 7px; }
+  #roomCode { font-size: 15px; }
+  .stats { padding: 7px 8px; font-size: 11px; gap: 6px; }
+  .sep { height: 14px; }
+  .sound-btn,
+  .view-btn { width: 28px; height: 27px; }
+  .sound-btn { font-size: 14px; }
+  .view-btn { font-size: 10px; }
+  .toasts { bottom: 218px; }
+}
+
+/* telefones bem estreitos: o ping cede lugar para sala e botões */
+@media (max-width: 360px) {
+  .stats .sep,
+  .stats .stat:nth-of-type(3) { display: none; }
+  .stats { gap: 7px; }
 }
 
 /* tablet/telefone grande na horizontal: sobe o chat acima dos controles */
@@ -715,13 +800,24 @@ html, body {
 @media (max-height: 560px) and (pointer: coarse) {
   .chat {
     grid-column: 1 / -1;
-    justify-self: center;
+    justify-self: end;
     width: min(66vw, 320px);
-    margin-bottom: 96px;
+    margin-bottom: 200px;
   }
   .chat-log { max-height: 36px; }
-  .toasts { bottom: 252px; }
+  .toasts {
+    left: max(12px, env(safe-area-inset-left));
+    right: auto;
+    top: 72px;
+    bottom: auto;
+    transform: none;
+    align-items: flex-start;
+  }
   .hint { display: none; }
+}
+
+@media (max-height: 560px) and (pointer: coarse) and (max-width: 720px) {
+  .chat { margin-bottom: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

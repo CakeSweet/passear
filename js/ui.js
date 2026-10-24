@@ -1,4 +1,4 @@
-import { sanitizeCode, sanitizeName, isTouch } from './utils.js';
+import { ROOM_CODE_LENGTH, sanitizeCode, sanitizeName, isTouch, storageGet, storageSet } from './utils.js';
 
 /** Cores do seletor do menu. */
 const PALETTE = [
@@ -55,7 +55,7 @@ export class UI {
     this._promptText = null;
     this._actionLabel = null;
 
-    this.color = localStorage.getItem('passear:cor') || PALETTE[0].hex;
+    this.color = String(storageGet('passear:cor', PALETTE[0].hex)).toLowerCase();
     this.chatIdle = false;
     this._chatTimer = null;
     this._unread = 0;
@@ -78,8 +78,10 @@ export class UI {
   _buildColors() {
     if (!this.colorPicker) return;
 
-    const known = PALETTE.some((entry) => entry.hex.toLowerCase() === this.color.toLowerCase());
-    if (!known) this.color = PALETTE[0].hex;
+    // Normaliza a cor salva para a grafia canônica da paleta; assim a comparação
+    // dos swatches não depende de maiúsculas/minúsculas.
+    const match = PALETTE.find((entry) => entry.hex.toLowerCase() === this.color.toLowerCase());
+    this.color = match ? match.hex : PALETTE[0].hex;
 
     const fragment = document.createDocumentFragment();
     for (const entry of PALETTE) {
@@ -101,10 +103,10 @@ export class UI {
 
   _pickColor(hex) {
     if (!hex) return;
-    this.color = hex;
-    localStorage.setItem('passear:cor', hex);
+    this.color = String(hex).toLowerCase();
+    storageSet('passear:cor', this.color);
     for (const button of this.colorPicker?.querySelectorAll('.swatch') ?? []) {
-      button.setAttribute('aria-checked', String(button.dataset.color === hex));
+      button.setAttribute('aria-checked', String(button.dataset.color === this.color));
     }
   }
 
@@ -115,7 +117,7 @@ export class UI {
   // ----------------------------------------------------------------- setup
 
   _bind() {
-    this.nameInput.value = localStorage.getItem('passear:nome') || '';
+    this.nameInput.value = storageGet('passear:nome', '');
 
     this.codeInput.addEventListener('input', () => {
       const caret = this.codeInput.selectionStart;
@@ -134,13 +136,18 @@ export class UI {
 
     this.actionBtn?.addEventListener('pointerdown', (event) => {
       event.preventDefault();
+      this.blurChat();
       this.callbacks.action?.();
     });
 
     this.punchBtn?.addEventListener('pointerdown', (event) => {
       event.preventDefault();
+      this.blurChat();
       this.callbacks.punch?.();
     });
+
+    // Tocar no mundo fecha o teclado do chat e devolve o controle do boneco.
+    document.getElementById('view')?.addEventListener('pointerdown', () => this.blurChat());
 
     // o chat recolhe sozinho e abre de novo com qualquer interação
     this.chatPanel?.addEventListener('pointerenter', () => this.setChatIdle(false));
@@ -161,7 +168,12 @@ export class UI {
       if (!text) return;
       this.chatInput.value = '';
       this.callbacks.chat?.(text);
-      this._armChatIdle();
+      if (isTouch()) {
+        // No celular o teclado virtual não pode continuar bloqueando o direcional.
+        this.blurChat();
+      } else {
+        this._armChatIdle();
+      }
     });
 
     window.addEventListener('keydown', (event) => {
@@ -210,7 +222,7 @@ export class UI {
       return null;
     }
     this.nameInput.value = name;
-    localStorage.setItem('passear:nome', name);
+    storageSet('passear:nome', name);
     return name;
   }
 
@@ -227,8 +239,8 @@ export class UI {
     if (!name) return;
 
     const code = sanitizeCode(this.codeInput.value);
-    if (code.length < 4) {
-      this.setStatus('Digite o código da sala (ex.: ABC12).', 'error');
+    if (code.length !== ROOM_CODE_LENGTH) {
+      this.setStatus(`Digite o código de ${ROOM_CODE_LENGTH} caracteres (ex.: ABC12).`, 'error');
       this.codeInput.focus();
       return;
     }
@@ -289,6 +301,13 @@ export class UI {
     }, delay);
   }
 
+  /** Fecha o teclado virtual e libera o movimento do boneco. */
+  blurChat() {
+    if (document.activeElement !== this.chatInput) return;
+    this.chatInput.blur();
+    this._armChatIdle();
+  }
+
   /** Recolhe o chat para o botão redondo (ou abre de novo). */
   setChatIdle(idle) {
     const next = Boolean(idle);
@@ -324,7 +343,8 @@ export class UI {
 
   showTouch() {
     this.touchEl.classList.remove('is-hidden');
-    if (this.hint) this.hint.textContent = 'arraste para olhar · direcional para andar';
+    this.touchEl.setAttribute('aria-hidden', 'false');
+    if (this.hint) this.hint.textContent = 'arraste para olhar · direcional para andar · ⤓ agachar';
   }
 
   setRoom(code) {

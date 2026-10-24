@@ -9,13 +9,31 @@ import { Input } from './input.js';
 import { UI } from './ui.js';
 import { Car, CAR_SEATS } from './car.js';
 import { Ragdoll } from './ragdoll.js';
-import { clamp, colorForName, dampAngle, randomCode } from './utils.js';
+import { AudioEngine } from './audio.js';
+import { clampToWorld, colorForName, dampAngle, randomCode } from './utils.js';
 
 const ORIGIN = new THREE.Vector3(0, 0, 0);
 
 const canvas = document.getElementById('view');
 const ui = new UI();
 const input = new Input();
+const audio = new AudioEngine();
+const soundBtn = document.getElementById('soundBtn');
+
+function syncSoundButton() {
+  if (!soundBtn) return;
+  const on = !audio.muted;
+  soundBtn.textContent = on ? '🔊' : '🔇';
+  soundBtn.setAttribute('aria-pressed', String(on));
+  soundBtn.setAttribute('aria-label', on ? 'Desligar som' : 'Ativar som');
+  soundBtn.title = on ? 'Desligar som' : 'Ativar som';
+}
+
+syncSoundButton();
+soundBtn?.addEventListener('click', () => {
+  audio.toggleMuted();
+  syncSoundButton();
+});
 
 let renderer;
 try {
@@ -38,6 +56,25 @@ const scene = world.scene;
 
 const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 500);
 const rig = new CameraRig(camera, canvas);
+const viewBtn = document.getElementById('viewBtn');
+
+function syncViewButton(firstPerson = rig.firstPerson) {
+  if (!viewBtn) return;
+  viewBtn.textContent = firstPerson ? '1ª' : '3ª';
+  viewBtn.setAttribute('aria-pressed', String(firstPerson));
+  viewBtn.setAttribute(
+    'aria-label',
+    firstPerson ? 'Câmera em primeira pessoa; voltar para terceira' : 'Câmera em terceira pessoa; mudar para primeira',
+  );
+  viewBtn.title = firstPerson ? 'Voltar para 3ª pessoa (V)' : 'Mudar para 1ª pessoa (V)';
+}
+
+rig.onModeChange = syncViewButton;
+syncViewButton();
+viewBtn?.addEventListener('click', () => {
+  rig.toggleFirstPerson();
+  syncViewButton();
+});
 
 /** @type {Network|null} */
 let net = null;
@@ -64,9 +101,16 @@ let ragdollReadyAt = 0;
 let ragdollSendTimer = 0;
 let carSendTimer = 0;
 
+/** Tempo sem novas poses até considerar que o motorista sumiu (ms). */
+const CAR_TARGET_TIMEOUT_MS = 400;
+let carTargetAt = 0;
+let carTargetFrom = null;
+
 const PLAYER_RADIUS = 0.62;
 const PUNCH_RANGE = 1.85;
 const PUNCH_COOLDOWN_MS = 900;
+const PUNCH_IMPULSE = 4.6;
+const PUNCH_LIFT = 4.0;
 let punchReadyAt = 0;
 
 const carFocus = new THREE.Vector3();
@@ -76,6 +120,7 @@ const hitImpulse = new THREE.Vector3();
 let connecting = false;
 let joined = false;
 let lastError = null;
+let lastUnavailableToastAt = -Infinity;
 let sendTimer = 0;
 let pingTimer = 0;
 let lastTime = performance.now();
@@ -83,7 +128,10 @@ let lastTime = performance.now();
 // ---------------------------------------------------------------- rede
 
 function wireNetwork(network) {
-  network.on('peer-join', (profile) => addRemote(profile));
+  network.on('peer-join', (profile) => {
+    audio.join();
+    addRemote(profile);
+  });
 
   network.on('peer-leave', (person) => removeRemote(person.id, person.name));
 
@@ -97,6 +145,7 @@ function wireNetwork(network) {
     if (typeof message.r === 'number') remote.targetYaw = message.r;
     remote.speed = typeof message.s === 'number' ? message.s : 0;
     remote.airborne = Number(message.a) === 1;
+    remote.crouching = Number(message.c) === 1;
     remote.seat = Number.isFinite(message.k) ? message.k : -1;
 
     // se a diferença for grande (entrou agora, teleportou), cola de uma vez
@@ -108,6 +157,9 @@ function wireNetwork(network) {
 
   network.on('peer-car', (id, message) => {
     if (mySeat === 0) return; // o motorista manda, não obedece
+    if (!Number.isFinite(message.x) || !Number.isFinite(message.z) || !Number.isFinite(message.yaw)) {
+      return;
+    }
     carTarget = {
       x: message.x,
       z: message.z,
@@ -115,6 +167,8 @@ function wireNetwork(network) {
       v: Number(message.v) || 0,
       st: Number(message.st) || 0,
     };
+    carTargetAt = performance.now();
+    carTargetFrom = id;
   });
 
   network.on('peer-ragdoll', (id, points) => {
@@ -133,6 +187,7 @@ function wireNetwork(network) {
         color: remote.color,
         skin: remote.avatar.skinColor,
         bounds: CONFIG.world.bounds,
+        floorAt: world.ring.floorHeightAt,
       });
       scene.add(ragdoll.group);
       ragdoll.remote = true;
@@ -146,16 +201,22 @@ function wireNetwork(network) {
 
   network.on('world', (state) => {
     if (!state?.car) return;
+    // Quem está no volante manda na pose; um welcome atrasado não pode
+    // teleportar o carro de volta para a posição do anfitrião.
+    if (mySeat === 0) return;
     if (!car) {
       pendingWorld = state.car;
       return;
     }
     car.setPose(state.car);
     car.sync(0);
-    if (mySeat !== 0) carTarget = { ...state.car };
+    carTarget = { ...car.pose };
+    carTargetAt = performance.now();
+    carTargetFrom = null;
   });
 
   network.on('chat', (message) => {
+    audio.message();
     ui.chat({ name: message.name, text: message.text, color: message.color });
   });
 
@@ -172,15 +233,21 @@ function wireNetwork(network) {
     const distance = Math.hypot(me.player.pos.x - message.px, me.player.pos.z - message.pz);
     if (distance > 2.8) return;
 
+    audio.hit();
     const dx = Number(message.dx) || 0;
     const dz = Number(message.dz) || 0;
     const name = attacker?.name || 'Alguém';
-    startRagdoll(new THREE.Vector3(dx * 3.4, 3.1, dz * 3.4), now, `${name} te acertou! Aperte R para levantar.`);
+    startRagdoll(
+      new THREE.Vector3(dx * PUNCH_IMPULSE, PUNCH_LIFT, dz * PUNCH_IMPULSE),
+      now,
+      `${name} te acertou! Aperte R para levantar.`,
+    );
   });
 
   network.on('latency', () => ui.setPing(network.averageRtt));
 
   network.on('host-lost', () => {
+    if (!joined) return;
     ui.toast('Quem criou a sala saiu. Vocês continuam juntos, mas ninguém novo entra.', 'leave');
     ui.chat({ system: true, text: 'O anfitrião saiu da sala. A conversa continua.' });
   });
@@ -193,6 +260,10 @@ function wireNetwork(network) {
     console.warn('[net] erro', error);
     if (!joined) return;
     if (error?.type === 'peer-unavailable') {
+      // A malha tenta reconectar sozinha; não vale um toast a cada tentativa.
+      const now = performance.now();
+      if (now - lastUnavailableToastAt < 20000) return;
+      lastUnavailableToastAt = now;
       ui.toast('Não foi possível falar com um participante.', 'leave');
       return;
     }
@@ -232,22 +303,39 @@ function addRemote(profile) {
     targetYaw: 0,
     speed: 0,
     airborne: false,
+    crouching: false,
     seat: Number.isFinite(profile.seat) ? profile.seat : -1,
     ragdoll: null,
   });
 
   refreshPeople();
-  ui.toast(`${name} entrou`, 'join');
-  ui.chat({ system: true, text: `${name} entrou na sala.` });
+  if (joined) {
+    ui.toast(`${name} entrou`, 'join');
+    ui.chat({ system: true, text: `${name} entrou na sala.` });
+  }
 }
 
 function removeRemote(id, fallbackName) {
   const remote = remotes.get(id);
   if (!remote) return;
   remotes.delete(id);
+
+  // Se quem saiu era o motorista (ou a última pose vinha dele), o carro
+  // não pode continuar "andando" sozinho para o resto da sala.
+  if (remote.seat === 0 || id === carTargetFrom) {
+    carTarget = null;
+    carTargetFrom = null;
+    if (car && mySeat !== 0) {
+      car.speed = 0;
+      car.steer = 0;
+    }
+  }
+
   remote.ragdoll?.dispose();
   remote.avatar.dispose();
   refreshPeople();
+  if (!joined) return;
+
   const name = fallbackName || remote.name;
   ui.toast(`${name} saiu`, 'leave');
   ui.chat({ system: true, text: `${name} saiu da sala.` });
@@ -267,6 +355,7 @@ function refreshPeople() {
 function ensureCar() {
   if (car) return car;
   car = new Car();
+  car.ring = world.ring;
   scene.add(car.group);
   car.sync(0);
   carFocus.set(car.x, 0.6, car.z);
@@ -284,7 +373,16 @@ function updateCar(dt) {
       net?.broadcastCar(car.pose);
     }
   } else if (carTarget) {
-    car.remoteUpdate(dt, carTarget);
+    if (performance.now() - carTargetAt > CAR_TARGET_TIMEOUT_MS) {
+      // O motorista sumiu ou parou de mandar poses: não deixa o carro
+      // "fantasma" continuar com velocidade e derrubando quem passa perto.
+      carTarget = null;
+      carTargetFrom = null;
+      car.speed = 0;
+      car.steer = 0;
+    } else {
+      car.remoteUpdate(dt, carTarget);
+    }
   }
 
   car.sync(dt);
@@ -348,8 +446,8 @@ function exitCar() {
   const side = CAR_SEATS[seat].x < 0 ? -1.25 : 1.25;
   car.toWorld(side, CAR_SEATS[seat].z, scratch);
 
-  const limit = CONFIG.world.bounds - 1;
-  me.player.pos.set(clamp(scratch.x, -limit, limit), 0, clamp(scratch.z, -limit, limit));
+  me.player.pos.set(scratch.x, world.ring.floorHeightAt(scratch.x, scratch.z), scratch.z);
+  clampToWorld(me.player.pos, CONFIG.world.bounds - 1);
   me.player.yaw = car.yaw;
   me.player.velocity.set(0, 0);
   me.player.vy = 0;
@@ -362,6 +460,8 @@ function exitCar() {
     car.speed = 0;
     car.steer = 0;
     carTarget = car.pose;
+    carTargetAt = performance.now();
+    carTargetFrom = null;
     net?.broadcastCar(car.pose);
   }
 
@@ -377,6 +477,7 @@ function startRagdoll(velocity, now = performance.now(), notice = 'Você caiu! A
     color: me.color,
     skin: me.avatar.skinColor,
     bounds: CONFIG.world.bounds,
+    floorAt: world.ring.floorHeightAt,
   });
 
   scene.add(ragdoll.group);
@@ -401,15 +502,16 @@ function endRagdoll(now = performance.now()) {
   if (!myRagdoll || !me) return;
 
   const hips = myRagdoll.hips;
-  const limit = CONFIG.world.bounds - 1;
+  const floor = world.ring.floorHeightAt(hips.x, hips.z);
 
-  me.player.pos.set(clamp(hips.x, -limit, limit), 0, clamp(hips.z, -limit, limit));
+  me.player.pos.set(hips.x, floor, hips.z);
+  clampToWorld(me.player.pos, CONFIG.world.bounds - 1);
   me.player.velocity.set(0, 0);
   me.player.vy = 0;
   me.player.onGround = true;
   me.avatar.root.position.copy(me.player.pos);
   me.avatar.root.rotation.y = me.player.yaw;
-  me.avatar.root.visible = true;
+  me.avatar.root.visible = !rig.firstPerson;
 
   myRagdoll.dispose();
   myRagdoll = null;
@@ -443,6 +545,7 @@ function tryPunch(now = performance.now()) {
   punchReadyAt = now + PUNCH_COOLDOWN_MS;
 
   me.avatar.punch();
+  audio.punch();
 
   const fx = Math.sin(me.player.yaw);
   const fz = Math.cos(me.player.yaw);
@@ -521,9 +624,7 @@ function resolvePlayerCollisions() {
   }
 
   if (moved) {
-    const limit = CONFIG.world.bounds - 1;
-    pos.x = clamp(pos.x, -limit, limit);
-    pos.z = clamp(pos.z, -limit, limit);
+    clampToWorld(pos, CONFIG.world.bounds - 1);
     me.avatar.root.position.copy(pos);
   }
 }
@@ -555,6 +656,11 @@ async function enterRoom({ name, code, host }) {
   wireNetwork(net);
 
   try {
+    // O carro e o provider precisam existir antes de a sala abrir: um convidado
+    // pode entrar e pedir o welcome antes de o host terminar este bloco.
+    ensureCar();
+    net.worldProvider = () => ({ car: car ? car.pose : null });
+
     if (host) await net.host(code);
     else await net.join(code);
   } catch (error) {
@@ -579,19 +685,19 @@ async function enterRoom({ name, code, host }) {
   scene.add(avatar.root);
 
   const player = new LocalPlayer(avatar);
+  player.groundAt = world.ring.floorHeightAt;
   player.spawn((Math.random() - 0.5) * 4, 4 + (Math.random() - 0.5) * 3, 0);
 
   me = { id: net.id, name, color, avatar, player };
   mySeat = -1;
   myRagdoll = null;
 
-  ensureCar();
-  net.worldProvider = () => ({ car: car ? car.pose : null });
-
-  if (pendingWorld) {
+  if (pendingWorld && car) {
     car.setPose(pendingWorld);
     car.sync(0);
-    carTarget = { ...pendingWorld };
+    carTarget = { ...car.pose };
+    carTargetAt = performance.now();
+    carTargetFrom = null;
     pendingWorld = null;
   }
 
@@ -603,6 +709,7 @@ async function enterRoom({ name, code, host }) {
 
   ui.chat({ system: true, text: `Sala ${code}. Compartilhe o link para chamar alguém.` });
   ui.toast(host ? `Sala ${code} criada` : `Você entrou na sala ${code}`, 'ok');
+  audio.join();
   return true;
 }
 
@@ -633,7 +740,7 @@ function friendlyError(error) {
 ui.onCreate(async (name) => {
   // tenta alguns códigos se o sorteado já estiver em uso
   for (let attempt = 0; attempt < 3; attempt++) {
-    const code = randomCode(5);
+    const code = randomCode();
     if (await enterRoom({ name, code, host: true })) return;
     if (lastError?.type !== 'unavailable-id') return;
   }
@@ -679,6 +786,8 @@ function updateLocal(dt, now) {
 
   // ---- caído ----
   if (myRagdoll) {
+    audio.setCar(false);
+    audio.walk(dt);
     myRagdoll.step(dt);
     me.player.pos.copy(myRagdoll.hips);
     me.player.speed = 0;
@@ -698,6 +807,8 @@ function updateLocal(dt, now) {
 
   // ---- sentado ----
   if (mySeat >= 0 && car) {
+    audio.walk(dt);
+    audio.setCar(true, car.speed);
     car.seatRoot(mySeat, me.player.pos);
     me.player.yaw = car.yaw;
     me.player.velocity.set(0, 0);
@@ -707,6 +818,7 @@ function updateLocal(dt, now) {
 
     me.avatar.root.position.copy(me.player.pos);
     me.avatar.root.rotation.y = me.player.yaw;
+    me.avatar.root.visible = !rig.firstPerson;
     me.avatar.update(dt, 0, false, true);
 
     rig.update(dt, carFocus, 0.95);
@@ -715,8 +827,21 @@ function updateLocal(dt, now) {
 
   // ---- a pé ----
   me.player.update(dt, input.state, rig.yaw);
+  me.avatar.root.visible = !rig.firstPerson;
   resolvePlayerCollisions();
-  rig.update(dt, me.player.pos);
+  rig.update(dt, me.player.pos, me.player.crouching ? 1.05 : 1.35);
+
+  audio.setCar(false);
+  const onGrass =
+    me.player.onGround &&
+    me.player.pos.y < 0.1 &&
+    Math.hypot(me.player.pos.x, me.player.pos.z) > 9.4;
+  audio.walk(dt, {
+    moving: me.player.speed > 0.35,
+    onGround: me.player.onGround,
+    grass: onGrass,
+    speed: me.player.speed,
+  });
 
   // atropelamento: cada cliente detecta o próprio
   if (car && now > hitCooldownUntil && car.hits(me.player.pos)) {
@@ -744,7 +869,7 @@ function updateRemotes(dt) {
     remote.yaw = dampAngle(remote.yaw, remote.targetYaw, 14, dt);
     remote.avatar.root.position.copy(remote.pos);
     remote.avatar.root.rotation.y = remote.yaw;
-    remote.avatar.update(dt, remote.speed, remote.airborne, remote.seat >= 0);
+    remote.avatar.update(dt, remote.speed, remote.airborne, remote.seat >= 0, remote.crouching);
   }
 }
 
@@ -794,8 +919,16 @@ function frame() {
     // E: entrar/sair do carro ou levantar
     if (input.wasPressed('KeyE')) handleAction();
 
-    // F: soco em quem estiver na frente
-    if (!myRagdoll && mySeat < 0 && input.wasPressed('KeyF')) tryPunch(now);
+    // V: alterna a perspectiva (o zoom também entra/sai da primeira pessoa).
+    if (input.wasPressed('KeyV')) {
+      rig.toggleFirstPerson();
+      syncViewButton();
+    }
+
+    // F: soco em quem estiver na frente. A tecla é consumida mesmo sem poder
+    // socar, para um F apertado dentro do carro não disparar depois.
+    const punchPressed = input.wasPressed('KeyF');
+    if (!myRagdoll && mySeat < 0 && punchPressed) tryPunch(now);
 
     // R: deitar no chão (ou levantar, se já estiver caído)
     if (!myRagdoll && input.wasPressed('KeyR')) {
@@ -856,6 +989,8 @@ if (new URLSearchParams(location.search).has('debug')) {
     get car() { return car; },
     get seat() { return mySeat; },
     get ragdoll() { return myRagdoll; },
+    world,
+    ring: world.ring,
     startRagdoll,
     endRagdoll,
     enterCar,
@@ -863,5 +998,6 @@ if (new URLSearchParams(location.search).has('debug')) {
     punch: tryPunch,
     rig,
     input,
+    audio,
   };
 }

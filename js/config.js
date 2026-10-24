@@ -73,7 +73,7 @@ export const CONFIG = {
     syncHz: 12,
     /** Tempo máximo caído antes de levantar sozinho (ms). */
     maxMs: 6000,
-    /** Tempo mínimo caído, mesmo que já esteja parado (ms). */
+    /** Tempo mínimo caído antes de levantar sozinho (R levanta na hora). */
     minMs: 2200,
   },
 };

@@ -3,6 +3,9 @@ import { clamp, damp } from './utils.js';
 
 const MIN_DIST = 2.6;
 const MAX_DIST = 16;
+const FIRST_PERSON_ENTER = 3.05;
+const FIRST_PERSON_EXIT_DIST = 3.8;
+const firstPersonEye = 0.22;
 
 /** Câmera em terceira pessoa: arrastar gira, roda aproxima, tudo amortecido. */
 export class CameraRig {
@@ -13,6 +16,9 @@ export class CameraRig {
     this.yaw = Math.PI;
     this.pitch = 0.34;
     this.dist = 8;
+    this.firstPerson = false;
+    this.onModeChange = null;
+    this._distBefore = this.dist;
 
     this.position = new THREE.Vector3();
     this.look = new THREE.Vector3();
@@ -49,8 +55,15 @@ export class CameraRig {
         const [a, b] = [...this.pointers.values()];
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
         if (this.pinchDistance > 0) {
-          const factor = this.pinchDistance / distance;
-          this.dist = clamp(this.dist * factor, MIN_DIST, MAX_DIST);
+          if (this.firstPerson) {
+            // Fechar a pinça (afastar a câmera) sai da primeira pessoa.
+            if (distance < this.pinchDistance - 2) this.setFirstPerson(false);
+          } else {
+            const factor = this.pinchDistance / distance;
+            const next = clamp(this.dist * factor, MIN_DIST, MAX_DIST);
+            this.dist = next;
+            if (factor < 1 && next <= FIRST_PERSON_ENTER) this.setFirstPerson(true);
+          }
         }
         this.pinchDistance = distance;
         return;
@@ -73,7 +86,14 @@ export class CameraRig {
       'wheel',
       (event) => {
         event.preventDefault();
-        this.dist = clamp(this.dist + event.deltaY * 0.008, MIN_DIST, MAX_DIST);
+        if (this.firstPerson) {
+          if (event.deltaY > 0) this.setFirstPerson(false);
+          return;
+        }
+
+        const next = clamp(this.dist + event.deltaY * 0.008, MIN_DIST, MAX_DIST);
+        this.dist = next;
+        if (event.deltaY < 0 && next <= FIRST_PERSON_ENTER) this.setFirstPerson(true);
       },
       { passive: false },
     );
@@ -86,13 +106,53 @@ export class CameraRig {
     this.yaw = Math.PI;
     this.pitch = portrait ? 0.40 : 0.34;
     this.dist = portrait ? 9.5 : 8;
+    this.firstPerson = false;
+    this._distBefore = this.dist;
     this.ready = false;
+    this.onModeChange?.(false);
+  }
+
+  /** Alterna entre a câmera de terceira pessoa e a visão em primeira pessoa. */
+  setFirstPerson(value) {
+    const next = Boolean(value);
+    if (next === this.firstPerson) return this.firstPerson;
+
+    if (next) {
+      this._distBefore = Math.max(this.dist, FIRST_PERSON_EXIT_DIST);
+      this.dist = MIN_DIST;
+    } else {
+      this.dist = Math.max(this._distBefore, FIRST_PERSON_EXIT_DIST);
+    }
+
+    this.firstPerson = next;
+    this.ready = false;
+    this.onModeChange?.(next);
+    return next;
+  }
+
+  toggleFirstPerson() {
+    return this.setFirstPerson(!this.firstPerson);
   }
 
   update(dt, target, focusHeight = 1.35) {
     const focusX = target.x;
-    const focusY = target.y + focusHeight;
+    const focusY = target.y + focusHeight + (this.firstPerson ? firstPersonEye : 0);
     const focusZ = target.z;
+
+    // Primeira pessoa: a câmera mora no olho e olha na direção do yaw/pitch.
+    if (this.firstPerson) {
+      const cosPitch = Math.cos(this.pitch);
+      const dirX = -Math.sin(this.yaw) * cosPitch;
+      const dirY = -Math.sin(this.pitch);
+      const dirZ = -Math.cos(this.yaw) * cosPitch;
+
+      this.position.set(focusX, focusY, focusZ);
+      this.look.set(focusX + dirX * 3, focusY + dirY * 3, focusZ + dirZ * 3);
+      this.ready = true;
+      this.camera.position.copy(this.position);
+      this.camera.lookAt(this.look);
+      return;
+    }
 
     const horizontal = Math.cos(this.pitch) * this.dist;
 

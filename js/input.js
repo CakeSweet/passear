@@ -1,22 +1,27 @@
 import { clamp, isTouch } from './utils.js';
 
-const ZERO = { forward: 0, right: 0, run: false, jump: false };
+const ZERO = { forward: 0, right: 0, run: false, jump: false, crouch: false };
+
+/** Teclas de ação de borda (não entram em `keys` para movimento). */
+const EDGE_KEYS = new Set(['KeyE', 'KeyR', 'KeyF', 'KeyV']);
 
 /** Teclado + joystick virtual. */
 export class Input {
   constructor() {
     this.keys = new Set();
-    /** teclas apertadas desde a última leitura (ações de borda: entrar/sair, cair) */
+    /** teclas de ação apertadas desde a última leitura (E/R/F/V) */
     this.pressed = new Set();
     this.axisX = 0;
     this.axisY = 0;
     this.jumpHeld = false;
+    this.crouchHeld = false;
     this.enabled = false;
     this.touch = isTouch();
 
     this._bindKeyboard();
     this._bindJoystick();
     this._bindJumpButton();
+    this._bindCrouchButton();
   }
 
   _isTyping() {
@@ -26,12 +31,21 @@ export class Input {
     return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
   }
 
+  /** Fecha o campo ativo (ex.: chat) para o direcional voltar a andar. */
+  _blurActiveInput() {
+    const el = document.activeElement;
+    if (!el) return;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable) el.blur();
+  }
+
   _bindKeyboard() {
     const handled = new Set([
       'KeyW', 'KeyA', 'KeyS', 'KeyD',
       'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
       'Space', 'ShiftLeft', 'ShiftRight',
-      'KeyE', 'KeyR', 'KeyF',
+      'KeyE', 'KeyR', 'KeyF', 'KeyV',
+      'KeyC', 'ControlLeft', 'ControlRight',
     ]);
 
     window.addEventListener('keydown', (event) => {
@@ -39,7 +53,7 @@ export class Input {
       if (!handled.has(event.code)) return;
       if (event.code === 'Space') event.preventDefault();
       this.keys.add(event.code);
-      if (!event.repeat) this.pressed.add(event.code);
+      if (!event.repeat && EDGE_KEYS.has(event.code)) this.pressed.add(event.code);
     });
 
     window.addEventListener('keyup', (event) => {
@@ -82,6 +96,7 @@ export class Input {
     };
 
     stick.addEventListener('pointerdown', (event) => {
+      this._blurActiveInput();
       pointerId = event.pointerId;
       stick.setPointerCapture?.(pointerId);
       stick.classList.add('active');
@@ -129,10 +144,30 @@ export class Input {
 
     const press = (event) => {
       event.preventDefault();
+      this._blurActiveInput();
       this.jumpHeld = true;
     };
     const release = () => {
       this.jumpHeld = false;
+    };
+
+    button.addEventListener('pointerdown', press);
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointercancel', release);
+    button.addEventListener('pointerleave', release);
+  }
+
+  _bindCrouchButton() {
+    const button = document.getElementById('crouchBtn');
+    if (!button) return;
+
+    const press = (event) => {
+      event.preventDefault();
+      this._blurActiveInput();
+      this.crouchHeld = true;
+    };
+    const release = () => {
+      this.crouchHeld = false;
     };
 
     button.addEventListener('pointerdown', press);
@@ -147,6 +182,7 @@ export class Input {
       this.keys.clear();
       this.pressed.clear();
       this.jumpHeld = false;
+      this.crouchHeld = false;
       this.resetJoystick?.();
     }
   }
@@ -174,6 +210,11 @@ export class Input {
       right: clamp(right, -1, 1),
       run: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
       jump: this.keys.has('Space') || this.jumpHeld,
+      crouch:
+        this.crouchHeld ||
+        this.keys.has('KeyC') ||
+        this.keys.has('ControlLeft') ||
+        this.keys.has('ControlRight'),
     };
   }
 }

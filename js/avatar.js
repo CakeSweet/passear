@@ -205,15 +205,18 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
   let idlePhase = phase;
   let bob = 0;
   let punchTimer = 0;
+  let crouchBlend = 0;
   const PUNCH_TIME = 0.36;
 
   const pose = {
     legL: 0, legR: 0, armL: 0, armR: 0, armLZ: 0.08, armRZ: -0.08, lean: 0, headTilt: 0,
   };
 
-  function animate(dt, speed = 0, airborne = false, sitting = false) {
+  function animate(dt, speed = 0, airborne = false, sitting = false, crouching = false) {
     const moving = speed > 0.25;
     const runBlend = clamp(speed / 7.6, 0, 1);
+    const targetCrouch = crouching && !sitting && !airborne ? 1 : 0;
+    crouchBlend = damp(crouchBlend, targetCrouch, 13, dt);
 
     let legL = 0;
     let legR = 0;
@@ -268,14 +271,27 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
       targetBob = breathe * 0.012;
     }
 
-    const punching = punchTimer > 0 && !sitting && !airborne;
-    if (punching) {
+    if (targetCrouch) {
+      legL += 0.34;
+      legR -= 0.34;
+      armL -= 0.24;
+      armR -= 0.24;
+      lean += 0.14;
+      headTilt += 0.04;
+    }
+
+    const canPunch = !sitting && !airborne;
+    const punching = punchTimer > 0 && canPunch;
+    if (punchTimer > 0) {
+      // O timer corre mesmo sentado/no ar; a pose só vale quando dá para socar.
       punchTimer = Math.max(0, punchTimer - dt);
-      const progress = 1 - punchTimer / PUNCH_TIME;
-      const swing = Math.sin(Math.min(1, progress * 1.25) * Math.PI);
-      armR = -2.1 * swing;
-      armRZ = -0.22 - 0.1 * (1 - swing);
-      lean += 0.09 * swing;
+      if (canPunch) {
+        const progress = 1 - punchTimer / PUNCH_TIME;
+        const swing = Math.sin(Math.min(1, progress * 1.25) * Math.PI);
+        armR = -2.1 * swing;
+        armRZ = -0.22 - 0.1 * (1 - swing);
+        lean += 0.09 * swing;
+      }
     }
 
     const k = 1 - Math.exp(-(punching ? 30 : 14) * dt);
@@ -299,6 +315,7 @@ export function createAvatar({ name = 'Boneco', color = '#ff7d6b' } = {}) {
     belt.rotation.x = pose.lean;
     head.rotation.x = pose.headTilt;
     rig.position.y = bob;
+    rig.scale.y = 1 - 0.22 * crouchBlend;
   }
 
   /** Começa a animação de soco. */
